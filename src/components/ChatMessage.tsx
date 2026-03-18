@@ -97,7 +97,7 @@ function extractSuggestedQuestions(content: string): { mainContent: string; ques
 }
 
 interface ChartDataItem {
-  type: "performance" | "compare" | "returns";
+  type: "performance" | "compare" | "returns" | "radar";
   data: Record<string, unknown>;
 }
 
@@ -108,6 +108,7 @@ interface ChatMessageProps {
   steps?: string[];
   toolCallCount?: number;
   charts?: ChartDataItem[];
+  imageUrl?: string;
   onAskQuestion?: (question: string) => void;
 }
 
@@ -118,6 +119,7 @@ export default function ChatMessage({
   steps,
   toolCallCount,
   charts,
+  imageUrl,
   onAskQuestion,
 }: ChatMessageProps) {
   const [showSteps, setShowSteps] = useState(true);
@@ -126,8 +128,19 @@ export default function ChatMessage({
     return (
       <div className="flex justify-end mb-4">
         <div className="flex items-start gap-2 max-w-[80%]">
-          <div className="bg-[#1428a0] text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-[15px] leading-relaxed">
-            {content}
+          <div className="space-y-2">
+            {imageUrl && (
+              <div className="flex justify-end">
+                <img
+                  src={imageUrl}
+                  alt="업로드된 차트"
+                  className="max-w-[280px] rounded-xl border border-gray-200 shadow-sm"
+                />
+              </div>
+            )}
+            <div className="bg-[#1428a0] text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-[15px] leading-relaxed">
+              {content}
+            </div>
           </div>
           <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
             <User className="w-4 h-4 text-gray-600" />

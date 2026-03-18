@@ -4480,3 +4480,68 @@ export function recommendETF(
 
   return candidates.slice(0, 5);
 }
+
+// === 경쟁사 ETF → KODEX 대안 매핑 ===
+const COMPETITOR_MAPPINGS: { competitor: string; brand: string; category: string; kodexKeywords: string[] }[] = [
+  // TIGER (미래에셋)
+  { competitor: "TIGER 미국S&P500", brand: "TIGER", category: "해외주식", kodexKeywords: ["미국S&P500", "S&P500"] },
+  { competitor: "TIGER 미국나스닥100", brand: "TIGER", category: "해외주식", kodexKeywords: ["나스닥100", "나스닥"] },
+  { competitor: "TIGER 200", brand: "TIGER", category: "국내주식", kodexKeywords: ["200", "코스피"] },
+  { competitor: "TIGER 반도체", brand: "TIGER", category: "테마", kodexKeywords: ["반도체"] },
+  { competitor: "TIGER 2차전지테마", brand: "TIGER", category: "테마", kodexKeywords: ["2차전지", "배터리"] },
+  { competitor: "TIGER 미국필라델피아반도체나스닥", brand: "TIGER", category: "해외주식", kodexKeywords: ["필라델피아반도체", "미국반도체"] },
+  { competitor: "TIGER 차이나전기차SOLACTIVE", brand: "TIGER", category: "해외주식", kodexKeywords: ["차이나", "중국"] },
+  { competitor: "TIGER 미국배당다우존스", brand: "TIGER", category: "해외주식", kodexKeywords: ["미국배당", "배당다우존스"] },
+  { competitor: "TIGER 단기채권액티브", brand: "TIGER", category: "채권", kodexKeywords: ["단기채권", "채권"] },
+  { competitor: "TIGER 미국테크TOP10 INDXX", brand: "TIGER", category: "해외주식", kodexKeywords: ["미국테크", "테크"] },
+  // ACE (한국투자)
+  { competitor: "ACE 미국S&P500", brand: "ACE", category: "해외주식", kodexKeywords: ["미국S&P500", "S&P500"] },
+  { competitor: "ACE 미국나스닥100", brand: "ACE", category: "해외주식", kodexKeywords: ["나스닥100", "나스닥"] },
+  { competitor: "ACE KRX금현물", brand: "ACE", category: "원자재", kodexKeywords: ["금", "골드"] },
+  { competitor: "ACE 미국빅테크TOP7 Plus", brand: "ACE", category: "해외주식", kodexKeywords: ["미국테크", "빅테크"] },
+  // RISE (KB)
+  { competitor: "RISE 미국S&P500", brand: "RISE", category: "해외주식", kodexKeywords: ["미국S&P500", "S&P500"] },
+  { competitor: "RISE 200", brand: "RISE", category: "국내주식", kodexKeywords: ["200", "코스피"] },
+  // SOL (신한)
+  { competitor: "SOL 미국S&P500", brand: "SOL", category: "해외주식", kodexKeywords: ["미국S&P500", "S&P500"] },
+  { competitor: "SOL 미국나스닥100", brand: "SOL", category: "해외주식", kodexKeywords: ["나스닥100", "나스닥"] },
+  // ARIRANG (한화)
+  { competitor: "ARIRANG 미국S&P500", brand: "ARIRANG", category: "해외주식", kodexKeywords: ["미국S&P500", "S&P500"] },
+  { competitor: "ARIRANG 200", brand: "ARIRANG", category: "국내주식", kodexKeywords: ["200", "코스피"] },
+];
+
+export function findKodexAlternative(competitorName: string): { competitor: string; alternatives: ETFProduct[]; brand: string } | null {
+  const q = competitorName.toLowerCase().replace(/\s+/g, "");
+
+  // 1. 매핑 테이블에서 찾기
+  const mapping = COMPETITOR_MAPPINGS.find((m) =>
+    q.includes(m.competitor.toLowerCase().replace(/\s+/g, "")) ||
+    m.competitor.toLowerCase().replace(/\s+/g, "").includes(q)
+  );
+
+  if (mapping) {
+    const alternatives = ETF_DATABASE.filter((etf) =>
+      mapping.kodexKeywords.some((kw) => etf.name.toLowerCase().includes(kw.toLowerCase()))
+    ).sort((a, b) => b.aum - a.aum).slice(0, 5);
+
+    return { competitor: mapping.competitor, alternatives, brand: mapping.brand };
+  }
+
+  // 2. 폴백: 경쟁사 브랜드 제거 후 키워드로 KODEX 검색
+  const brands = ["tiger", "ace", "rise", "sol", "arirang", "hanaro", "kbstar", "kosef"];
+  let keyword = q;
+  for (const brand of brands) {
+    keyword = keyword.replace(brand, "");
+  }
+  if (keyword.length < 2) return null;
+
+  const alternatives = ETF_DATABASE.filter((etf) =>
+    etf.name.toLowerCase().includes(keyword) ||
+    etf.index.toLowerCase().includes(keyword)
+  ).sort((a, b) => b.aum - a.aum).slice(0, 5);
+
+  if (alternatives.length === 0) return null;
+
+  const detectedBrand = brands.find((b) => q.includes(b))?.toUpperCase() || "경쟁사";
+  return { competitor: competitorName, alternatives, brand: detectedBrand };
+}

@@ -154,4 +154,19 @@ export const ETF_TOOLS: ToolDefinition[] = [
       required: ["investment_goal"],
     },
   },
+  {
+    name: "find_kodex_alternative",
+    description:
+      "경쟁사 ETF(TIGER, ACE, RISE, SOL 등) 이름을 입력하면 동일/유사한 KODEX ETF 대안을 찾아줍니다. 경쟁사 ETF를 언급하거나 '대신', '대안', '대체' 키워드가 있으면 반드시 호출하세요.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        competitor_name: {
+          type: "string",
+          description: "경쟁사 ETF 이름 (예: TIGER 미국S&P500, ACE 나스닥100)",
+        },
+      },
+      required: ["competitor_name"],
+    },
+  },
 ];

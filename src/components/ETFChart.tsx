@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,6 +12,11 @@ import {
   Legend,
   Area,
   AreaChart,
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
 } from "recharts";
 
 interface PricePoint {
@@ -57,7 +60,21 @@ interface ReturnBarProps {
   };
 }
 
-export type ChartData = PerformanceChartProps | CompareChartProps | ReturnBarProps;
+interface RadarChartProps {
+  type: "radar";
+  data: {
+    etfs: {
+      name: string;
+      수익률: number;
+      안정성: number;
+      수수료: number;
+      규모: number;
+      성장성: number;
+    }[];
+  };
+}
+
+export type ChartData = PerformanceChartProps | CompareChartProps | ReturnBarProps | RadarChartProps;
 
 const COLORS = ["#1428a0", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -227,6 +244,62 @@ function ReturnsChart({ data }: { data: ReturnBarProps["data"] }) {
   );
 }
 
+function ETFRadarChart({ data }: { data: RadarChartProps["data"] }) {
+  const metrics = ["수익률", "안정성", "수수료", "규모", "성장성"];
+  const chartData = metrics.map((metric) => {
+    const point: Record<string, string | number> = { metric };
+    data.etfs.forEach((etf) => {
+      point[etf.name] = etf[metric as keyof typeof etf] as number;
+    });
+    return point;
+  });
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 my-3">
+      <div className="mb-3">
+        <h4 className="text-sm font-bold text-gray-800">ETF 종합 비교 (레이더)</h4>
+        <p className="text-xs text-gray-400">
+          {data.etfs.map((e) => e.name).join(" vs ")} · 5축 분석
+        </p>
+      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <RadarChart data={chartData}>
+          <PolarGrid stroke="#e5e7eb" />
+          <PolarAngleAxis
+            dataKey="metric"
+            tick={{ fontSize: 11, fill: "#4b5563" }}
+          />
+          <PolarRadiusAxis
+            angle={90}
+            domain={[0, 100]}
+            tick={{ fontSize: 9, fill: "#9ca3af" }}
+          />
+          {data.etfs.map((etf, i) => (
+            <Radar
+              key={etf.name}
+              name={etf.name}
+              dataKey={etf.name}
+              stroke={COLORS[i % COLORS.length]}
+              fill={COLORS[i % COLORS.length]}
+              fillOpacity={0.15}
+              strokeWidth={2}
+            />
+          ))}
+          <Legend
+            wrapperStyle={{ fontSize: 11 }}
+            iconType="square"
+            iconSize={10}
+          />
+          <Tooltip
+            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
+            formatter={(value) => [`${Number(value).toFixed(0)}점`]}
+          />
+        </RadarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function ETFChart({ chart }: { chart: ChartData }) {
   switch (chart.type) {
     case "performance":
@@ -235,6 +308,8 @@ export default function ETFChart({ chart }: { chart: ChartData }) {
       return <CompareChart data={chart.data} />;
     case "returns":
       return <ReturnsChart data={chart.data} />;
+    case "radar":
+      return <ETFRadarChart data={chart.data} />;
     default:
       return null;
   }

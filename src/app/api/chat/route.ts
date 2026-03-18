@@ -9,6 +9,7 @@ import {
   searchDocuments,
   searchNews,
   recommendETF,
+  findKodexAlternative,
   type ETFProduct,
 } from "@/lib/etf-data";
 
@@ -23,7 +24,7 @@ interface ChatMessage {
 }
 
 interface ChartData {
-  type: "performance" | "compare" | "returns";
+  type: "performance" | "compare" | "returns" | "radar";
   data: Record<string, unknown>;
 }
 
@@ -95,7 +96,7 @@ function applyGuardrails(
 function executeTool(
   toolName: string,
   toolInput: Record<string, unknown>
-): { result: unknown; steps: string[]; chartData?: ChartData } {
+): { result: unknown; steps: string[]; chartData?: ChartData; extraCharts?: ChartData[] } {
   const steps: string[] = [];
 
   switch (toolName) {
@@ -178,6 +179,36 @@ function executeTool(
       const results = compareETFs(tickers);
       steps.push(`✅ ${results.length}개 종목 데이터 조회 완료`);
       steps.push(`📊 비교 차트 데이터 생성 완료`);
+      const compareChart: ChartData | undefined = results.length >= 2
+        ? {
+            type: "compare" as const,
+            data: {
+              etfs: results.map((r: ETFProduct) => ({
+                ticker: r.ticker,
+                name: r.name,
+                return1M: r.return1M,
+                return3M: r.return3M,
+                return6M: r.return6M,
+                return1Y: r.return1Y,
+              })),
+            },
+          }
+        : undefined;
+      const radarChart: ChartData | undefined = results.length >= 2
+        ? {
+            type: "radar" as const,
+            data: {
+              etfs: results.slice(0, 4).map((r: ETFProduct) => ({
+                name: r.name,
+                수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
+                안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
+                수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
+                규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
+                성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
+              })),
+            },
+          }
+        : undefined;
       return {
         result: results.map((r: ETFProduct) => ({
           ticker: r.ticker,
@@ -192,21 +223,8 @@ function executeTool(
           aum: r.aum,
         })),
         steps,
-        chartData: results.length >= 2
-          ? {
-              type: "compare" as const,
-              data: {
-                etfs: results.map((r: ETFProduct) => ({
-                  ticker: r.ticker,
-                  name: r.name,
-                  return1M: r.return1M,
-                  return3M: r.return3M,
-                  return6M: r.return6M,
-                  return1Y: r.return1Y,
-                })),
-              },
-            }
-          : undefined,
+        chartData: compareChart,
+        extraCharts: radarChart ? [radarChart] : undefined,
       };
     }
 
@@ -278,6 +296,50 @@ function executeTool(
       };
     }
 
+    case "find_kodex_alternative": {
+      const competitorName = toolInput.competitor_name as string;
+      steps.push(`🔄 MCP Server [경쟁사 대안] "${competitorName}" → KODEX 대체 상품 검색`);
+      const result = findKodexAlternative(competitorName);
+      if (result && result.alternatives.length > 0) {
+        steps.push(`✅ ${result.brand} 상품 → KODEX 대안 ${result.alternatives.length}개 매칭`);
+        const radarEtfs = result.alternatives.slice(0, 3);
+        return {
+          result: {
+            competitor: result.competitor,
+            brand: result.brand,
+            alternatives: result.alternatives.map((r) => ({
+              ticker: r.ticker,
+              name: r.name,
+              category: r.category,
+              fee: r.fee,
+              return1M: r.return1M,
+              return3M: r.return3M,
+              return6M: r.return6M,
+              return1Y: r.return1Y,
+              aum: r.aum,
+              mdd: r.mdd,
+            })),
+          },
+          steps,
+          chartData: radarEtfs.length >= 2 ? {
+            type: "radar" as const,
+            data: {
+              etfs: radarEtfs.map((r) => ({
+                name: r.name,
+                수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
+                안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
+                수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
+                규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
+                성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
+              })),
+            },
+          } : undefined,
+        };
+      }
+      steps.push("❌ 해당 경쟁사 ETF에 대한 KODEX 대안을 찾을 수 없습니다");
+      return { result: { error: "대안을 찾을 수 없습니다", competitor: competitorName }, steps };
+    }
+
     default:
       return { result: { error: "Unknown tool" }, steps: ["❌ 알 수 없는 도구"] };
   }
@@ -347,12 +409,13 @@ export async function POST(request: NextRequest) {
         if (toolCall.type !== "function") continue;
         toolCallCount++;
         const toolInput = JSON.parse(toolCall.function.arguments);
-        const { result, steps, chartData } = executeTool(
+        const { result, steps, chartData, extraCharts } = executeTool(
           toolCall.function.name,
           toolInput
         );
         allSteps.push(...steps);
         if (chartData) allCharts.push(chartData);
+        if (extraCharts) allCharts.push(...extraCharts);
 
         openaiMessages.push({
           role: "tool",

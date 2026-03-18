@@ -2,10 +2,14 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { searchETFProducts, type ETFProduct } from "@/lib/etf-data";
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+export const dynamic = "force-dynamic";
+
+function getOpenAI() {
+  return new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  });
+}
 
 export async function POST(request: NextRequest) {
   const { imageBase64, mimeType } = (await request.json()) as {
@@ -23,6 +27,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Claude Vision으로 차트 분석
+    const openai = getOpenAI();
     const response = await openai.chat.completions.create({
       model: "anthropic/claude-sonnet-4",
       max_tokens: 2048,

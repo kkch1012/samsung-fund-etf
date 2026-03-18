@@ -265,6 +265,9 @@ export default function QuizPage() {
         score: scores[i],
       }));
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
       const res = await fetch("/api/quiz-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -273,10 +276,12 @@ export default function QuizPage() {
           totalScore: total,
           investorType: investorType.type,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+      if (data.analysis) {
         setAiAnalysis(data.analysis);
 
         // localStorage에 저장
@@ -292,6 +297,20 @@ export default function QuizPage() {
       }
     } catch (error) {
       console.error("AI analysis error:", error);
+      // 타임아웃/에러 시에도 기본 결과 저장
+      const resultToSave: SavedResult = {
+        investorType,
+        totalScore: total,
+        answers: QUESTIONS.map((q, i) => ({
+          question: q.question,
+          answer: labels[i],
+          score: scores[i],
+        })),
+        aiAnalysis: null,
+        analyzedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(resultToSave));
+      setSavedResult(resultToSave);
     } finally {
       setAnalyzing(false);
     }

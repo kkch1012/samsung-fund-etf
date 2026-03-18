@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
+export const maxDuration = 30;
+
 function getOpenAI() {
   return new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
     apiKey: process.env.OPENROUTER_API_KEY,
+    timeout: 25000,
   });
 }
 
@@ -45,7 +48,7 @@ ${answers.map((a, i) => `Q${i + 1}. ${a.question}\n→ 답변: ${a.answer} (점�
 }`;
 
     const response = await openai.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+      model: "anthropic/claude-3.5-haiku",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 1000,
       temperature: 0.7,

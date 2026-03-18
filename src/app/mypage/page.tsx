@@ -15,6 +15,17 @@ interface InvestorType {
   etfs: { name: string; ticker: string; reason: string; weight: number }[];
 }
 
+interface AIPortfolioETF {
+  name: string;
+  ticker: string;
+  weight: number;
+  return1Y: number;
+  return3Y: number;
+  fee: number;
+  mdd: number;
+  category: string;
+}
+
 interface AIAnalysis {
   personalizedAnalysis: string;
   strengths: string[];
@@ -22,6 +33,7 @@ interface AIAnalysis {
   recommendedStrategy: string;
   portfolioRationale: string;
   marketInsight: string;
+  portfolio?: AIPortfolioETF[];
 }
 
 interface SavedResult {
@@ -29,6 +41,7 @@ interface SavedResult {
   totalScore: number;
   answers: { question: string; answer: string; score: number }[];
   aiAnalysis: AIAnalysis | null;
+  aiPortfolio: AIPortfolioETF[] | null;
   analyzedAt: string;
 }
 
@@ -95,6 +108,11 @@ export default function MyPage() {
 
   const type = savedResult.investorType;
   const analysis = savedResult.aiAnalysis;
+  const aiPortfolio = savedResult.aiPortfolio;
+  const displayETFs = aiPortfolio && aiPortfolio.length >= 2
+    ? aiPortfolio.map((e) => ({ name: e.name, ticker: e.ticker, reason: e.category, weight: e.weight }))
+    : type.etfs;
+  const isAIPortfolio = !!(aiPortfolio && aiPortfolio.length >= 2);
   const analyzedDate = new Date(savedResult.analyzedAt);
   const dateStr = `${analyzedDate.getFullYear()}.${String(analyzedDate.getMonth() + 1).padStart(2, "0")}.${String(analyzedDate.getDate()).padStart(2, "0")}`;
 
@@ -207,12 +225,15 @@ export default function MyPage() {
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-[#1428a0]" />
             <h3 className="font-bold text-gray-800">맞춤 KODEX 포트폴리오</h3>
+            {isAIPortfolio && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">AI 동적 추천</span>
+            )}
           </div>
           {analysis && (
             <p className="text-xs text-gray-500 mb-4">{analysis.portfolioRationale}</p>
           )}
           <div className="space-y-3">
-            {type.etfs.map((etf) => (
+            {displayETFs.map((etf) => (
               <div key={etf.ticker} className="flex items-center gap-3">
                 <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-[#1428a0] flex items-center justify-center">
                   <span className="text-white font-bold text-sm">{etf.weight}%</span>
@@ -233,6 +254,15 @@ export default function MyPage() {
               </div>
             ))}
           </div>
+          {isAIPortfolio && (
+            <a
+              href="/portfolio"
+              className="mt-4 flex items-center justify-center gap-1.5 py-2 text-xs text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              포트폴리오 시뮬레이터에서 비중 조절하기
+              <ChevronRight className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
 
         {/* 파이차트 */}
@@ -242,22 +272,26 @@ export default function MyPage() {
             <div
               className="w-40 h-40 rounded-full relative"
               style={{
-                background: `conic-gradient(
-                  #1428a0 0% ${type.etfs[0].weight}%,
-                  #22c55e ${type.etfs[0].weight}% ${type.etfs[0].weight + type.etfs[1].weight}%,
-                  #f59e0b ${type.etfs[0].weight + type.etfs[1].weight}% ${type.etfs[0].weight + type.etfs[1].weight + type.etfs[2].weight}%,
-                  #8b5cf6 ${type.etfs[0].weight + type.etfs[1].weight + type.etfs[2].weight}% 100%
-                )`,
+                background: (() => {
+                  const e = displayETFs;
+                  const colors = ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"];
+                  let acc = 0;
+                  return `conic-gradient(${e.map((etf, i) => {
+                    const start = acc;
+                    acc += etf.weight;
+                    return `${colors[i % colors.length]} ${start}% ${acc}%`;
+                  }).join(", ")})`;
+                })(),
               }}
             >
               <div className="absolute inset-4 bg-white rounded-full" />
             </div>
             <div className="space-y-2">
-              {type.etfs.map((etf, i) => (
+              {displayETFs.map((etf, i) => (
                 <div key={etf.ticker} className="flex items-center gap-2 text-xs">
                   <div
                     className="w-3 h-3 rounded-sm"
-                    style={{ backgroundColor: ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"][i] }}
+                    style={{ backgroundColor: ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"][i % 4] }}
                   />
                   <span className="text-gray-600">{etf.name.split(" ").slice(0, 2).join(" ")} ({etf.weight}%)</span>
                 </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { ArrowLeft, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const PortfolioCharts = dynamic(() => import("@/components/PortfolioCharts"), { ssr: false });
@@ -17,10 +17,17 @@ interface ETFAllocation {
   category: string;
 }
 
-const PRESET_PORTFOLIOS: { name: string; description: string; etfs: ETFAllocation[] }[] = [
+interface PresetPortfolio {
+  name: string;
+  description: string;
+  isAI?: boolean;
+  etfs: ETFAllocation[];
+}
+
+const PRESET_PORTFOLIOS: PresetPortfolio[] = [
   {
-    name: "안정형",
-    description: "원금 보존 중심, 낮은 변동성",
+    name: "안정 수호형",
+    description: "원금 보존 최우선",
     etfs: [
       { name: "KODEX CD금리액티브(합성)", ticker: "459580", weight: 40, return1Y: 2.69, return3Y: 0, fee: 0.02, mdd: 0, category: "금리" },
       { name: "KODEX 머니마켓액티브", ticker: "488770", weight: 30, return1Y: 2.98, return3Y: 0, fee: 0.05, mdd: 0, category: "채권" },
@@ -29,8 +36,18 @@ const PRESET_PORTFOLIOS: { name: string; description: string; etfs: ETFAllocatio
     ],
   },
   {
-    name: "균형형",
-    description: "안정성과 수익의 균형",
+    name: "안정 추구형",
+    description: "예금 이상 안정 수익",
+    etfs: [
+      { name: "KODEX 종합채권(AA-이상)액티브", ticker: "273130", weight: 35, return1Y: 5.12, return3Y: 2.34, fee: 0.05, mdd: -3.2, category: "채권" },
+      { name: "KODEX CD금리액티브(합성)", ticker: "459580", weight: 25, return1Y: 2.69, return3Y: 0, fee: 0.02, mdd: 0, category: "금리" },
+      { name: "KODEX 배당가치", ticker: "290080", weight: 25, return1Y: 9.8, return3Y: 7.1, fee: 0.24, mdd: -15.2, category: "국내주식" },
+      { name: "KODEX 200", ticker: "069500", weight: 15, return1Y: 12.45, return3Y: 8.67, fee: 0.15, mdd: -18.5, category: "국내주식" },
+    ],
+  },
+  {
+    name: "균형 추구형",
+    description: "안정성과 수익 균형",
     etfs: [
       { name: "KODEX 200", ticker: "069500", weight: 30, return1Y: 12.45, return3Y: 8.67, fee: 0.15, mdd: -18.5, category: "국내주식" },
       { name: "KODEX 미국S&P500TR", ticker: "379800", weight: 25, return1Y: 24.8, return3Y: 15.2, fee: 0.05, mdd: -12.3, category: "해외주식" },
@@ -39,8 +56,8 @@ const PRESET_PORTFOLIOS: { name: string; description: string; etfs: ETFAllocatio
     ],
   },
   {
-    name: "성장형",
-    description: "공격적 수익 추구",
+    name: "성장 추구형",
+    description: "중장기 적극 성장",
     etfs: [
       { name: "KODEX 미국S&P500TR", ticker: "379800", weight: 30, return1Y: 24.8, return3Y: 15.2, fee: 0.05, mdd: -12.3, category: "해외주식" },
       { name: "KODEX 미국나스닥100TR", ticker: "379810", weight: 25, return1Y: 32.5, return3Y: 18.4, fee: 0.05, mdd: -15.8, category: "해외주식" },
@@ -49,28 +66,65 @@ const PRESET_PORTFOLIOS: { name: string; description: string; etfs: ETFAllocatio
     ],
   },
   {
-    name: "공격형",
-    description: "고수익 고위험, 테마 집중",
+    name: "적극 투자형",
+    description: "테마·성장주 집중",
     etfs: [
       { name: "KODEX 미국나스닥100TR", ticker: "379810", weight: 30, return1Y: 32.5, return3Y: 18.4, fee: 0.05, mdd: -15.8, category: "해외주식" },
       { name: "KODEX 반도체MV", ticker: "390390", weight: 25, return1Y: 28.7, return3Y: 22.1, fee: 0.45, mdd: -25.3, category: "테마" },
       { name: "KODEX 2차전지산업", ticker: "305720", weight: 25, return1Y: -8.5, return3Y: -5.2, fee: 0.45, mdd: -45.1, category: "테마" },
-      { name: "KODEX 레버리지", ticker: "122630", weight: 20, return1Y: 22.3, return3Y: 12.8, fee: 0.64, mdd: -38.7, category: "레버리지/인버스" },
+      { name: "KODEX 미국S&P500TR", ticker: "379800", weight: 20, return1Y: 24.8, return3Y: 15.2, fee: 0.05, mdd: -12.3, category: "해외주식" },
+    ],
+  },
+  {
+    name: "공격 투자형",
+    description: "고수익 고위험 추구",
+    etfs: [
+      { name: "KODEX 미국나스닥100TR", ticker: "379810", weight: 25, return1Y: 32.5, return3Y: 18.4, fee: 0.05, mdd: -15.8, category: "해외주식" },
+      { name: "KODEX 반도체MV", ticker: "390390", weight: 25, return1Y: 28.7, return3Y: 22.1, fee: 0.45, mdd: -25.3, category: "테마" },
+      { name: "KODEX 레버리지", ticker: "122630", weight: 25, return1Y: 22.3, return3Y: 12.8, fee: 0.64, mdd: -38.7, category: "레버리지" },
+      { name: "KODEX 2차전지산업", ticker: "305720", weight: 25, return1Y: -8.5, return3Y: -5.2, fee: 0.45, mdd: -45.1, category: "테마" },
     ],
   },
 ];
 
-export default function PortfolioPage() {
-  const [selectedPreset, setSelectedPreset] = useState(1); // 균형형 기본
-  const [investAmount, setInvestAmount] = useState(1000);
-  const [weights, setWeights] = useState<number[]>(PRESET_PORTFOLIOS[1].etfs.map((e) => e.weight));
+const STORAGE_KEY = "kodex-quiz-result";
 
-  const portfolio = PRESET_PORTFOLIOS[selectedPreset];
+export default function PortfolioPage() {
+  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(PRESET_PORTFOLIOS);
+  const [selectedPreset, setSelectedPreset] = useState(2); // 균형 추구형 기본
+  const [investAmount, setInvestAmount] = useState(1000);
+  const [weights, setWeights] = useState<number[]>(PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight));
+
+  // localStorage에서 AI 맞춤 포트폴리오 로드
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.aiPortfolio && parsed.aiPortfolio.length >= 2) {
+          const aiPreset: PresetPortfolio = {
+            name: "나의 AI 맞춤",
+            description: `${parsed.investorType?.type || "맞춤"} 기반`,
+            isAI: true,
+            etfs: parsed.aiPortfolio,
+          };
+          setAllPresets([aiPreset, ...PRESET_PORTFOLIOS]);
+          // AI 맞춤을 기본 선택
+          setSelectedPreset(0);
+          setWeights(parsed.aiPortfolio.map((e: ETFAllocation) => e.weight));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const portfolio = allPresets[selectedPreset];
 
   // 프리셋 변경
   const changePreset = (idx: number) => {
     setSelectedPreset(idx);
-    setWeights(PRESET_PORTFOLIOS[idx].etfs.map((e) => e.weight));
+    setWeights(allPresets[idx].etfs.map((e) => e.weight));
   };
 
   // 비중 조절
@@ -88,7 +142,6 @@ export default function PortfolioPage() {
         }
       }
     } else {
-      // 모두 0인 경우 균등 분배
       const remaining = 100 - newVal;
       const otherCount = newWeights.length - 1;
       for (let i = 0; i < newWeights.length; i++) {
@@ -101,7 +154,6 @@ export default function PortfolioPage() {
     // 합 100 보정
     const total = newWeights.reduce((a, b) => a + b, 0);
     if (total !== 100 && newWeights.length > 0) {
-      // 가장 큰 항목(현재 조절 중인 항목 제외)에서 보정
       let corrIdx = idx;
       let maxVal = -1;
       for (let i = 0; i < newWeights.length; i++) {
@@ -156,7 +208,6 @@ export default function PortfolioPage() {
       date.setMonth(date.getMonth() - months + i);
       const label = `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
 
-      // 약간의 변동성 추가 (시드 기반)
       const noise = Math.sin(i * 2.5) * (investAmount * 0.015) + Math.cos(i * 1.7) * (investAmount * 0.01);
       data.push({ month: label, value: Math.round(value + noise) });
       value *= 1 + monthlyReturn;
@@ -205,22 +256,35 @@ export default function PortfolioPage() {
         </div>
 
         {/* 프리셋 선택 */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {PRESET_PORTFOLIOS.map((preset, i) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {allPresets.map((preset, i) => (
             <button
               key={preset.name}
               onClick={() => changePreset(i)}
-              className={`py-3 px-4 rounded-xl border-2 text-center transition-all ${
+              className={`py-3 px-3 rounded-xl border-2 text-center transition-all ${
                 selectedPreset === i
-                  ? "border-[#1428a0] bg-blue-50 text-[#1428a0]"
+                  ? preset.isAI
+                    ? "border-purple-500 bg-purple-50 text-purple-700"
+                    : "border-[#1428a0] bg-blue-50 text-[#1428a0]"
                   : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
               }`}
             >
-              <div className="text-sm font-bold">{preset.name}</div>
+              <div className="text-sm font-bold flex items-center justify-center gap-1">
+                {preset.isAI && <Sparkles className="w-3.5 h-3.5" />}
+                {preset.name}
+              </div>
               <div className="text-[10px] opacity-70 mt-0.5">{preset.description}</div>
             </button>
           ))}
         </div>
+
+        {/* AI 안내 */}
+        {portfolio.isAI && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 flex items-center gap-2 text-xs text-purple-700">
+            <Sparkles className="w-4 h-4 flex-shrink-0" />
+            투자 성향 진단 결과를 기반으로 AI가 동적으로 추천한 포트폴리오입니다. 슬라이더로 비중을 자유롭게 조절해보세요.
+          </div>
+        )}
 
         {/* 비중 조절 + 파이차트 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -232,7 +296,7 @@ export default function PortfolioPage() {
                 <div key={etf.ticker}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-gray-600 truncate max-w-[200px]">{etf.name}</span>
-                    <span className="text-xs font-bold" style={{ color: COLORS[i] }}>
+                    <span className="text-xs font-bold" style={{ color: COLORS[i % COLORS.length] }}>
                       {weights[i]}%
                     </span>
                   </div>
@@ -259,7 +323,7 @@ export default function PortfolioPage() {
                 style={{
                   background: `conic-gradient(${weights.map((w, i) => {
                     const start = weights.slice(0, i).reduce((a, b) => a + b, 0);
-                    return `${COLORS[i]} ${start}% ${start + w}%`;
+                    return `${COLORS[i % COLORS.length]} ${start}% ${start + w}%`;
                   }).join(", ")})`,
                 }}
               >
@@ -274,7 +338,7 @@ export default function PortfolioPage() {
             <div className="grid grid-cols-2 gap-2 mt-4">
               {portfolio.etfs.map((etf, i) => (
                 <div key={etf.ticker} className="flex items-center gap-1.5 text-xs">
-                  <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i] }} />
+                  <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                   <span className="text-gray-600 truncate">{etf.name.replace("KODEX ", "")} ({weights[i]}%)</span>
                 </div>
               ))}
@@ -339,7 +403,7 @@ export default function PortfolioPage() {
                   <tr key={etf.ticker} className="border-b border-gray-100">
                     <td className="py-2.5 px-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: COLORS[i] }} />
+                        <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                         <span className="text-gray-800 text-xs">{etf.name}</span>
                       </div>
                     </td>

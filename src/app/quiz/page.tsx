@@ -187,6 +187,17 @@ function getInvestorType(totalScore: number): InvestorType {
   return INVESTOR_TYPES["공격 투자형"];
 }
 
+interface AIPortfolioETF {
+  name: string;
+  ticker: string;
+  weight: number;
+  return1Y: number;
+  return3Y: number;
+  fee: number;
+  mdd: number;
+  category: string;
+}
+
 interface AIAnalysis {
   personalizedAnalysis: string;
   strengths: string[];
@@ -194,6 +205,7 @@ interface AIAnalysis {
   recommendedStrategy: string;
   portfolioRationale: string;
   marketInsight: string;
+  portfolio?: AIPortfolioETF[];
 }
 
 interface SavedResult {
@@ -201,6 +213,7 @@ interface SavedResult {
   totalScore: number;
   answers: { question: string; answer: string; score: number }[];
   aiAnalysis: AIAnalysis | null;
+  aiPortfolio: AIPortfolioETF[] | null;
   analyzedAt: string;
 }
 
@@ -282,6 +295,7 @@ export default function QuizPage() {
 
       const data = await res.json();
       if (data.analysis) {
+        const aiPortfolio = data.analysis.portfolio || null;
         setAiAnalysis(data.analysis);
 
         // localStorage에 저장
@@ -290,6 +304,7 @@ export default function QuizPage() {
           totalScore: total,
           answers: quizAnswers,
           aiAnalysis: data.analysis,
+          aiPortfolio,
           analyzedAt: new Date().toISOString(),
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(resultToSave));
@@ -307,10 +322,10 @@ export default function QuizPage() {
           score: scores[i],
         })),
         aiAnalysis: null,
+        aiPortfolio: null,
         analyzedAt: new Date().toISOString(),
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(resultToSave));
-      setSavedResult(resultToSave);
     } finally {
       setAnalyzing(false);
     }
@@ -339,6 +354,11 @@ export default function QuizPage() {
     const saved = savedResult;
     const type = saved.investorType;
     const analysis = saved.aiAnalysis;
+    // AI 동적 포트폴리오가 있으면 우선 사용
+    const displayETFs = saved.aiPortfolio && saved.aiPortfolio.length >= 2
+      ? saved.aiPortfolio.map((e) => ({ name: e.name, ticker: e.ticker, reason: e.category, weight: e.weight }))
+      : type.etfs;
+    const isAIPortfolio = !!(saved.aiPortfolio && saved.aiPortfolio.length >= 2);
     const analyzedDate = new Date(saved.analyzedAt);
     const dateStr = `${analyzedDate.getFullYear()}.${String(analyzedDate.getMonth() + 1).padStart(2, "0")}.${String(analyzedDate.getDate()).padStart(2, "0")}`;
 
@@ -464,12 +484,17 @@ export default function QuizPage() {
 
           {/* 맞춤 포트폴리오 */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-800 mb-1">맞춤 KODEX 포트폴리오</h3>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-bold text-gray-800">맞춤 KODEX 포트폴리오</h3>
+              {isAIPortfolio && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">AI 추천</span>
+              )}
+            </div>
             {analysis && (
               <p className="text-xs text-gray-500 mb-4">{analysis.portfolioRationale}</p>
             )}
             <div className="space-y-3">
-              {type.etfs.map((etf) => (
+              {displayETFs.map((etf) => (
                 <div key={etf.ticker} className="flex items-center gap-3">
                   <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-[#1428a0] flex items-center justify-center">
                     <span className="text-white font-bold text-sm">{etf.weight}%</span>
@@ -490,6 +515,15 @@ export default function QuizPage() {
                 </div>
               ))}
             </div>
+            {isAIPortfolio && (
+              <a
+                href="/portfolio"
+                className="mt-4 flex items-center justify-center gap-1.5 py-2 text-xs text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                포트폴리오 시뮬레이터에서 비중 조절하기
+                <ChevronRight className="w-3.5 h-3.5" />
+              </a>
+            )}
           </div>
 
           {/* 파이차트 시각화 */}
@@ -499,22 +533,26 @@ export default function QuizPage() {
               <div
                 className="w-40 h-40 rounded-full relative"
                 style={{
-                  background: `conic-gradient(
-                    #1428a0 0% ${type.etfs[0].weight}%,
-                    #22c55e ${type.etfs[0].weight}% ${type.etfs[0].weight + type.etfs[1].weight}%,
-                    #f59e0b ${type.etfs[0].weight + type.etfs[1].weight}% ${type.etfs[0].weight + type.etfs[1].weight + type.etfs[2].weight}%,
-                    #8b5cf6 ${type.etfs[0].weight + type.etfs[1].weight + type.etfs[2].weight}% 100%
-                  )`,
+                  background: (() => {
+                    const e = displayETFs;
+                    const colors = ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"];
+                    let acc = 0;
+                    return `conic-gradient(${e.map((etf, i) => {
+                      const start = acc;
+                      acc += etf.weight;
+                      return `${colors[i % colors.length]} ${start}% ${acc}%`;
+                    }).join(", ")})`;
+                  })(),
                 }}
               >
                 <div className="absolute inset-4 bg-white rounded-full" />
               </div>
               <div className="space-y-2">
-                {type.etfs.map((etf, i) => (
+                {displayETFs.map((etf, i) => (
                   <div key={etf.ticker} className="flex items-center gap-2 text-xs">
                     <div
                       className="w-3 h-3 rounded-sm"
-                      style={{ backgroundColor: ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"][i] }}
+                      style={{ backgroundColor: ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"][i % 4] }}
                     />
                     <span className="text-gray-600">{etf.name.split(" ").slice(0, 2).join(" ")} ({etf.weight}%)</span>
                   </div>
@@ -553,6 +591,12 @@ export default function QuizPage() {
 
   // 결과 화면 (방금 진단 완료)
   if (result) {
+    const aiPortfolioETFs = aiAnalysis?.portfolio;
+    const resultDisplayETFs = aiPortfolioETFs && aiPortfolioETFs.length >= 2
+      ? aiPortfolioETFs.map((e: AIPortfolioETF) => ({ name: e.name, ticker: e.ticker, reason: e.category, weight: e.weight }))
+      : result.etfs;
+    const resultIsAI = !!(aiPortfolioETFs && aiPortfolioETFs.length >= 2);
+
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
@@ -687,12 +731,17 @@ export default function QuizPage() {
 
           {/* 맞춤 포트폴리오 */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-800 mb-1">맞춤 KODEX 포트폴리오</h3>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-bold text-gray-800">맞춤 KODEX 포트폴리오</h3>
+              {resultIsAI && (
+                <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">AI 동적 추천</span>
+              )}
+            </div>
             {aiAnalysis && (
               <p className="text-xs text-gray-500 mb-4">{aiAnalysis.portfolioRationale}</p>
             )}
             <div className="space-y-3">
-              {result.etfs.map((etf) => (
+              {resultDisplayETFs.map((etf) => (
                 <div key={etf.ticker} className="flex items-center gap-3">
                   <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-[#1428a0] flex items-center justify-center">
                     <span className="text-white font-bold text-sm">{etf.weight}%</span>
@@ -713,6 +762,15 @@ export default function QuizPage() {
                 </div>
               ))}
             </div>
+            {resultIsAI && (
+              <a
+                href="/portfolio"
+                className="mt-4 flex items-center justify-center gap-1.5 py-2 text-xs text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                포트폴리오 시뮬레이터에서 비중 조절하기
+                <ChevronRight className="w-3.5 h-3.5" />
+              </a>
+            )}
           </div>
 
           {/* 파이차트 시각화 */}
@@ -722,18 +780,22 @@ export default function QuizPage() {
               <div
                 className="w-40 h-40 rounded-full relative"
                 style={{
-                  background: `conic-gradient(
-                    #1428a0 0% ${result.etfs[0].weight}%,
-                    #22c55e ${result.etfs[0].weight}% ${result.etfs[0].weight + result.etfs[1].weight}%,
-                    #f59e0b ${result.etfs[0].weight + result.etfs[1].weight}% ${result.etfs[0].weight + result.etfs[1].weight + result.etfs[2].weight}%,
-                    #8b5cf6 ${result.etfs[0].weight + result.etfs[1].weight + result.etfs[2].weight}% 100%
-                  )`,
+                  background: (() => {
+                    const e = resultDisplayETFs;
+                    const colors = ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"];
+                    let acc = 0;
+                    return `conic-gradient(${e.map((etf, i) => {
+                      const start = acc;
+                      acc += etf.weight;
+                      return `${colors[i % colors.length]} ${start}% ${acc}%`;
+                    }).join(", ")})`;
+                  })(),
                 }}
               >
                 <div className="absolute inset-4 bg-white rounded-full" />
               </div>
               <div className="space-y-2">
-                {result.etfs.map((etf, i) => (
+                {resultDisplayETFs.map((etf, i) => (
                   <div key={etf.ticker} className="flex items-center gap-2 text-xs">
                     <div
                       className="w-3 h-3 rounded-sm"

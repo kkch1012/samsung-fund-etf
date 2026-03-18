@@ -13,10 +13,12 @@ import {
   type ETFProduct,
 } from "@/lib/etf-data";
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+function getOpenAI() {
+  return new OpenAI({
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  });
+}
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -384,6 +386,7 @@ export async function POST(request: NextRequest) {
     { role: "user", content: userMessage },
   ];
 
+  const openai = getOpenAI();
   let finalResponse = "";
   let toolCallCount = 0;
   const maxToolCalls = 15;

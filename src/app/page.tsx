@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper } from "lucide-react";
+import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
 import precachedData from "@/lib/precached-responses.json";
@@ -356,6 +356,14 @@ export default function Home() {
           >
             <Newspaper className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">시장 브리핑</span>
+          </a>
+          <a
+            href="/mypage"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="나의 투자 성향"
+          >
+            <UserCircle className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">마이</span>
           </a>
           <a
             href="/architecture"

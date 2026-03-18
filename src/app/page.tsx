@@ -183,6 +183,12 @@ export default function Home() {
     const messageText = text || input.trim();
     if (!messageText || loading) return;
 
+    // 이미지가 대기 중이면 이미지 분석으로 전환
+    if (pendingImage) {
+      sendImageAnalysis();
+      return;
+    }
+
     setInput("");
     // textarea 높이 초기화
     if (inputRef.current) inputRef.current.style.height = "auto";

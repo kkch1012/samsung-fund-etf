@@ -11,6 +11,8 @@ import {
   Bot,
   Shield,
   Zap,
+  ImagePlus,
+  ArrowLeftRight,
 } from "lucide-react";
 
 const SUGGESTIONS = [
@@ -31,7 +33,7 @@ const SUGGESTIONS = [
     questions: [
       "KODEX 미국S&P500TR 수익률 분석해줘",
       "KODEX 200이랑 나스닥100 비교해줘",
-      "최근 뉴스 기반으로 ETF 시장 동향 알려줘",
+      "TIGER 미국S&P500 대신 KODEX는?",
     ],
   },
   {
@@ -72,15 +74,15 @@ const FEATURES = [
     color: "bg-emerald-50 text-emerald-600 border-emerald-200",
   },
   {
-    icon: <Zap className="w-5 h-5" />,
-    title: "실시간 차트",
-    desc: "수익률 추이·비교 차트 자동 생성 및 렌더링",
+    icon: <ArrowLeftRight className="w-5 h-5" />,
+    title: "경쟁사 비교",
+    desc: "TIGER·ACE 등 타사 ETF 대비 KODEX 대안 추천",
     color: "bg-amber-50 text-amber-600 border-amber-200",
   },
   {
-    icon: <Newspaper className="w-5 h-5" />,
-    title: "뉴스 연동",
-    desc: "금융 뉴스 실시간 검색 및 시장 동향 분석",
+    icon: <ImagePlus className="w-5 h-5" />,
+    title: "차트 이미지 분석",
+    desc: "차트 스크린샷 업로드 → AI 트렌드 분석",
     color: "bg-rose-50 text-rose-600 border-rose-200",
   },
 ];
@@ -88,7 +90,7 @@ const FEATURES = [
 const STATS = [
   { label: "KODEX ETF", value: "230+", unit: "종목" },
   { label: "투자설명서", value: "4", unit: "건" },
-  { label: "MCP 도구", value: "7", unit: "개" },
+  { label: "MCP 도구", value: "8", unit: "개" },
   { label: "평균 응답", value: "~10", unit: "초" },
 ];
 

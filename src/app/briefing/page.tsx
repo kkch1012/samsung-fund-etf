@@ -117,7 +117,7 @@ export default function BriefingPage() {
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* 날짜 + 시장 심리 */}
-        <div className="flex items-stretch gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch gap-4">
           <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center gap-2 mb-3">
               <Calendar className="w-4 h-4 text-gray-400" />
@@ -135,7 +135,7 @@ export default function BriefingPage() {
               ))}
             </div>
           </div>
-          <div className={`w-48 rounded-xl border p-5 flex flex-col items-center justify-center ${MARKET_DATA.sentiment.bgColor} border-green-200`}>
+          <div className={`w-full sm:w-48 rounded-xl border p-5 flex flex-col items-center justify-center ${MARKET_DATA.sentiment.bgColor} ${MARKET_DATA.sentiment.score >= 50 ? "border-green-200" : "border-red-200"}`}>
             <div className="text-[11px] text-gray-500 mb-1">시장 심리 지수</div>
             <div className={`text-3xl font-bold ${MARKET_DATA.sentiment.color}`}>
               {MARKET_DATA.sentiment.score}

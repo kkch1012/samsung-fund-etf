@@ -291,7 +291,7 @@ export default function QuizPage() {
 
   // 퀴즈 화면
   const q = QUESTIONS[currentQ];
-  const progress = ((currentQ) / QUESTIONS.length) * 100;
+  const progress = ((currentQ + 1) / QUESTIONS.length) * 100;
 
   return (
     <div className="min-h-screen bg-gray-50">

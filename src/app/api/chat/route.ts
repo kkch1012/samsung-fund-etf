@@ -42,13 +42,13 @@ function convertToolsToOpenAI(tools: typeof ETF_TOOLS) {
 
 // === Guardrails: 금융 컴플라이언스 필터 ===
 const FORBIDDEN_PATTERNS = [
-  /반드시\s*(사|매수|매도|투자)\s*(하세요|해야|하십시오)/g,
-  /확실히\s*(오릅니다|수익|보장)/g,
-  /원금\s*보장/g,
-  /손실\s*없/g,
-  /무조건\s*(수익|오름|상승)/g,
-  /지금\s*당장\s*(사|매수)/g,
-  /놓치면\s*후회/g,
+  /반드시\s*(사|매수|매도|투자)\s*(하세요|해야|하십시오)/,
+  /확실히\s*(오릅니다|수익|보장)/,
+  /원금\s*보장/,
+  /손실\s*없/,
+  /무조건\s*(수익|오름|상승)/,
+  /지금\s*당장\s*(사|매수)/,
+  /놓치면\s*후회/,
 ];
 
 const DISCLAIMER = "\n\n> ⚠️ 본 정보는 투자 참고용이며, 투자 판단은 투자자 본인의 책임입니다. 과거 수익률이 미래 수익을 보장하지 않습니다.";
@@ -64,10 +64,11 @@ function applyGuardrails(
   let violations = 0;
 
   for (const pattern of FORBIDDEN_PATTERNS) {
-    const matches = filtered.match(pattern);
+    const globalPattern = new RegExp(pattern.source, "g");
+    const matches = filtered.match(globalPattern);
     if (matches) {
       violations += matches.length;
-      filtered = filtered.replace(pattern, (match) => `~~${match}~~`);
+      filtered = filtered.replace(globalPattern, (match) => `~~${match}~~`);
     }
   }
 
@@ -408,7 +409,18 @@ export async function POST(request: NextRequest) {
       for (const toolCall of message.tool_calls || []) {
         if (toolCall.type !== "function") continue;
         toolCallCount++;
-        const toolInput = JSON.parse(toolCall.function.arguments);
+        let toolInput: Record<string, unknown>;
+        try {
+          toolInput = JSON.parse(toolCall.function.arguments);
+        } catch {
+          allSteps.push(`❌ 도구 인자 파싱 실패: ${toolCall.function.name}`);
+          openaiMessages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({ error: "Invalid arguments" }),
+          });
+          continue;
+        }
         const { result, steps, chartData, extraCharts } = executeTool(
           toolCall.function.name,
           toolInput

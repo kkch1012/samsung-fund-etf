@@ -80,12 +80,20 @@ export default function PortfolioPage() {
     newWeights[idx] = newVal;
 
     // 다른 항목에서 비례 차감
-    const others = newWeights.filter((_, i) => i !== idx);
-    const othersSum = others.reduce((a, b) => a + b, 0);
+    const othersSum = newWeights.reduce((a, _, i) => i !== idx ? a + newWeights[i] : a, 0);
     if (othersSum > 0) {
       for (let i = 0; i < newWeights.length; i++) {
         if (i !== idx) {
           newWeights[i] = Math.max(0, Math.round(newWeights[i] - (diff * newWeights[i]) / othersSum));
+        }
+      }
+    } else {
+      // 모두 0인 경우 균등 분배
+      const remaining = 100 - newVal;
+      const otherCount = newWeights.length - 1;
+      for (let i = 0; i < newWeights.length; i++) {
+        if (i !== idx) {
+          newWeights[i] = Math.round(remaining / otherCount);
         }
       }
     }
@@ -93,8 +101,18 @@ export default function PortfolioPage() {
     // 합 100 보정
     const total = newWeights.reduce((a, b) => a + b, 0);
     if (total !== 100 && newWeights.length > 0) {
-      const maxIdx = newWeights.indexOf(Math.max(...newWeights));
-      newWeights[maxIdx] += 100 - total;
+      // 가장 큰 항목(현재 조절 중인 항목 제외)에서 보정
+      let corrIdx = idx;
+      let maxVal = -1;
+      for (let i = 0; i < newWeights.length; i++) {
+        if (i !== idx && newWeights[i] > maxVal) {
+          maxVal = newWeights[i];
+          corrIdx = i;
+        }
+      }
+      if (corrIdx !== idx) {
+        newWeights[corrIdx] = Math.max(0, newWeights[corrIdx] + 100 - total);
+      }
     }
 
     setWeights(newWeights);
@@ -187,7 +205,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* 프리셋 선택 */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {PRESET_PORTFOLIOS.map((preset, i) => (
             <button
               key={preset.name}
@@ -265,7 +283,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* 기대 수익 카드 */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
             <div className="text-xs text-gray-500 mb-1">기대 수익률 (1년)</div>
             <div className={`text-xl font-bold ${Number(metrics.expectedReturn) >= 0 ? "text-red-500" : "text-blue-500"}`}>

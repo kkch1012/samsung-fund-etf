@@ -128,31 +128,31 @@ export async function POST(request: NextRequest) {
 
 function extractKeywords(text: string): string[] {
   const keywords: string[] = [];
-  const patterns = [
-    { regex: /반도체/g, keyword: "반도체" },
-    { regex: /S&P\s?500|에스앤피/gi, keyword: "S&P500" },
-    { regex: /나스닥|NASDAQ/gi, keyword: "나스닥" },
-    { regex: /코스피|KOSPI/gi, keyword: "200" },
-    { regex: /코스닥|KOSDAQ/gi, keyword: "코스닥" },
-    { regex: /2차전지|배터리|전기차/g, keyword: "2차전지" },
-    { regex: /금|골드|gold/gi, keyword: "금" },
-    { regex: /채권|국채|bond/gi, keyword: "채권" },
-    { regex: /미국|해외|글로벌/g, keyword: "미국" },
-    { regex: /AI|인공지능/gi, keyword: "AI" },
-    { regex: /배당|인컴|dividend/gi, keyword: "배당" },
-    { regex: /원유|에너지|석유/g, keyword: "원유" },
-    { regex: /헬스케어|바이오|제약/g, keyword: "바이오" },
-    { regex: /테크|IT|기술/g, keyword: "테크" },
-    { regex: /자동차/g, keyword: "자동차" },
-    { regex: /중국|차이나/g, keyword: "차이나" },
-    { regex: /일본|니케이/g, keyword: "일본" },
-    { regex: /인도/g, keyword: "인도" },
-    { regex: /유럽/g, keyword: "유럽" },
+  const patterns: [RegExp, string][] = [
+    [/반도체/, "반도체"],
+    [/S&P\s?500|에스앤피/i, "S&P500"],
+    [/나스닥|NASDAQ/i, "나스닥"],
+    [/코스피|KOSPI/i, "200"],
+    [/코스닥|KOSDAQ/i, "코스닥"],
+    [/2차전지|배터리|전기차/, "2차전지"],
+    [/금|골드|gold/i, "금"],
+    [/채권|국채|bond/i, "채권"],
+    [/미국|해외|글로벌/, "미국"],
+    [/AI|인공지능/i, "AI"],
+    [/배당|인컴|dividend/i, "배당"],
+    [/원유|에너지|석유/, "원유"],
+    [/헬스케어|바이오|제약/, "바이오"],
+    [/테크|IT|기술/, "테크"],
+    [/자동차/, "자동차"],
+    [/중국|차이나/, "차이나"],
+    [/일본|니케이/, "일본"],
+    [/인도/, "인도"],
+    [/유럽/, "유럽"],
   ];
 
-  for (const p of patterns) {
-    if (p.regex.test(text)) {
-      keywords.push(p.keyword);
+  for (const [regex, keyword] of patterns) {
+    if (regex.test(text)) {
+      keywords.push(keyword);
     }
   }
 

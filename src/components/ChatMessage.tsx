@@ -350,7 +350,7 @@ export default function ChatMessage({
   const parsedSteps = (steps || []).map(parseStep);
   const contentForParsing = typingDone ? content : displayedContent;
   const { mainContent, questions: suggestedQuestions } = extractSuggestedQuestions(contentForParsing);
-  const slotOptions = typingDone ? extractSlotFillingOptions(content) : [];
+  const slotOptions: SlotOption[] = [];
   const nextBestActions: SuggestedAction[] =
     suggestedActions && suggestedActions.length > 0
       ? suggestedActions

@@ -54,38 +54,28 @@ function parseStep(raw: string): Step {
 function extractSuggestedQuestions(content: string): { mainContent: string; questions: string[] } {
   const lines = content.split("\n");
   const questions: string[] = [];
-  let cutIndex = lines.length;
 
-  // 끝에서부터 추천 질문 패턴 탐색 (최대 5개)
-  for (let i = lines.length - 1; i >= 0; i--) {
+  // 1) "추천/후속 질문" 헤더 라인을 정방향으로 찾기
+  const headerKeywords = ["추천", "후속", "물어보세요", "궁금", "이런 것도", "질문"];
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i].trim();
+    if (headerKeywords.some((k) => l.includes(k)) && (l.includes("질문") || l.includes("물어") || l.includes("📌"))) {
+      headerIdx = i;
+    }
+  }
+
+  // 2) 헤더 이후 라인에서 질문 패턴(?로 끝나는 번호/불릿) 추출
+  const startScan = headerIdx >= 0 ? headerIdx : Math.max(0, lines.length - 8);
+  for (let i = startScan; i < lines.length; i++) {
     if (questions.length >= 5) break;
     const line = lines[i].trim();
     const bulletMatch = line.match(/^[-•]\s*(.+[?？])$/);
-    // 번호는 1~9만 허용 (17. 같은 본문 목록 오인 방지)
     const numberMatch = line.match(/^[1-9][.)]\s*(.+[?？])$/);
-    const boldMatch = line.match(/^\*\*(.+[?？])\*\*$/);
-
     if (bulletMatch) {
-      questions.unshift(bulletMatch[1].replace(/\*\*/g, "").trim());
-      cutIndex = i;
+      questions.push(bulletMatch[1].replace(/\*\*/g, "").trim());
     } else if (numberMatch) {
-      questions.unshift(numberMatch[1].replace(/\*\*/g, "").trim());
-      cutIndex = i;
-    } else if (boldMatch) {
-      questions.unshift(boldMatch[1].trim());
-      cutIndex = i;
-    } else if (line === "" && questions.length > 0) {
-      cutIndex = i;
-      continue;
-    } else if (questions.length > 0) {
-      if (line.includes("궁금") || line.includes("질문") || line.includes("추가") || line.includes("알고 싶") || line.includes("문의") || line.includes("물어보세요")) {
-        cutIndex = i;
-      }
-      break;
-    } else if (line === "") {
-      continue;
-    } else {
-      break;
+      questions.push(numberMatch[1].replace(/\*\*/g, "").trim());
     }
   }
 
@@ -93,6 +83,8 @@ function extractSuggestedQuestions(content: string): { mainContent: string; ques
     return { mainContent: content, questions: [] };
   }
 
+  // 3) 헤더부터 끝까지 전부 잘라냄
+  const cutIndex = headerIdx >= 0 ? headerIdx : startScan;
   const mainContent = lines.slice(0, cutIndex).join("\n").trimEnd();
   return { mainContent, questions };
 }

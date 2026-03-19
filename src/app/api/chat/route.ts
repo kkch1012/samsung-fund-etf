@@ -253,7 +253,6 @@ function executeTool(
             return6M: etf.return6M,
             return1Y: etf.return1Y,
             return3Y: etf.return3Y,
-            priceHistory: priceHistory.slice(-60),
           },
           steps,
           chartData: {
@@ -680,7 +679,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const history = (conversationHistory || []).slice(-10).map((m: ChatMessage) => ({
+  const history = (conversationHistory || []).slice(-4).map((m: ChatMessage) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }));

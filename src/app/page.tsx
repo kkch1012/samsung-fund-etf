@@ -67,24 +67,29 @@ export default function Home() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const userScrolledUpRef = useRef(false);
-  const scrollTickRef = useRef(false);
+  const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
 
   useEffect(() => {
-    if (userScrolledUpRef.current || scrollTickRef.current) return;
-    scrollTickRef.current = true;
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-      scrollTickRef.current = false;
-    });
+    if (!autoScrollRef.current) return;
+    programmaticScrollRef.current = true;
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    setTimeout(() => { programmaticScrollRef.current = false; }, 50);
   }, [messages, loadingSteps]);
 
   useEffect(() => {
     const el = mainRef.current;
     if (!el) return;
+    let lastScrollTop = el.scrollTop;
     const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-      userScrolledUpRef.current = !atBottom;
+      if (programmaticScrollRef.current) {
+        lastScrollTop = el.scrollTop;
+        return;
+      }
+      if (el.scrollTop < lastScrollTop) {
+        autoScrollRef.current = false;
+      }
+      lastScrollTop = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
@@ -217,7 +222,7 @@ export default function Home() {
       content: messageText,
     };
     setMessages((prev) => [...prev, userMsg]);
-    userScrolledUpRef.current = false;
+    autoScrollRef.current = true;
     setLoading(true);
     setLoadingSteps([]);
 

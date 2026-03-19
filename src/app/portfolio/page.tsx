@@ -1,11 +1,39 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Brain, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const PortfolioCharts = dynamic(() => import("@/components/PortfolioCharts"), { ssr: false });
+
+function formatSimpleMarkdown(text: string): string {
+  let html = text;
+  html = html.replace(
+    /\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g,
+    (match) => {
+      const rows = match.trim().split("\n");
+      const headers = rows[0].split("|").filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join("");
+      const body = rows.slice(2).map(row =>
+        `<tr>${row.split("|").filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join("")}</tr>`
+      ).join("");
+      return `<table class="ai-table"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+  );
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  html = html.replace(/^### (.+)$/gm, '<h3 class="text-sm font-bold mt-3 mb-1">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 class="text-base font-bold mt-3 mb-1">$1</h2>');
+  html = html.replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
+  html = html.replace(
+    /⚠️(.+?)$/gm,
+    '<div class="bg-amber-50 border border-amber-200 rounded px-3 py-1.5 text-xs text-amber-800 mt-2">⚠️$1</div>'
+  );
+  html = html.replace(/\n\n/g, "<br/><br/>");
+  html = html.replace(/\n/g, "<br/>");
+  return html;
+}
 
 interface ETFAllocation {
   name: string;
@@ -126,9 +154,40 @@ export default function PortfolioPage() {
   const [selectedPreset, setSelectedPreset] = useState(initial.selectedIdx);
   const [investAmount, setInvestAmount] = useState(1000);
   const [weights, setWeights] = useState<number[]>(initial.initialWeights);
-
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const portfolio = allPresets[selectedPreset];
+
+  const runAiAnalysis = useCallback(async () => {
+    if (aiLoading) return;
+    setAiLoading(true);
+    setAiAnalysis(null);
+
+    const holdings = portfolio.etfs
+      .map((etf, i) => `${etf.name}(${etf.ticker}) ${weights[i]}%`)
+      .join(", ");
+
+    const prompt = `나는 투자금 ${investAmount}만원으로 다음 KODEX ETF 포트폴리오를 갖고 있어: ${holdings}. 이 포트폴리오를 진단해줘.`;
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }],
+          model: "haiku",
+        }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const data = await res.json();
+      setAiAnalysis(data.response || "분석 결과를 가져올 수 없습니다.");
+    } catch {
+      setAiAnalysis("AI 분석 중 오류가 발생했습니다. 다시 시도해 주세요.");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [portfolio, weights, investAmount, aiLoading]);
 
   // 프리셋 변경
   const changePreset = (idx: number) => {
@@ -389,6 +448,51 @@ export default function PortfolioPage() {
           <h3 className="text-sm font-bold text-gray-800 mb-1">시뮬레이션 수익률 추이 (12개월)</h3>
           <p className="text-xs text-gray-400 mb-4">과거 데이터 기반 시뮬레이션이며, 실제 수익률과 다를 수 있습니다.</p>
           <PortfolioCharts data={backtestData} />
+        </div>
+
+        {/* AI 분석 */}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+              <Brain className="w-4 h-4 text-[#1428a0]" />
+              AI 포트폴리오 분석
+            </h3>
+            <button
+              type="button"
+              onClick={runAiAnalysis}
+              disabled={aiLoading}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-[#1428a0] rounded-lg hover:bg-[#0f1f7a] disabled:opacity-50 transition-colors"
+            >
+              {aiLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  분석 중...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  AI로 분석하기
+                </>
+              )}
+            </button>
+          </div>
+          {!aiAnalysis && !aiLoading && (
+            <p className="text-xs text-gray-400">
+              현재 포트폴리오 구성을 AI가 분석하여 분산 진단, 리스크 평가, 리밸런싱 제안을 제공합니다.
+            </p>
+          )}
+          {aiLoading && (
+            <div className="flex items-center gap-2 py-6 justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-[#1428a0]" />
+              <span className="text-sm text-gray-500">포트폴리오를 분석하고 있습니다...</span>
+            </div>
+          )}
+          {aiAnalysis && !aiLoading && (
+            <div
+              className="prose prose-sm max-w-none text-[13px] leading-relaxed text-gray-700 ai-analysis-content"
+              dangerouslySetInnerHTML={{ __html: formatSimpleMarkdown(aiAnalysis) }}
+            />
+          )}
         </div>
 
         {/* 구성 종목 상세 */}

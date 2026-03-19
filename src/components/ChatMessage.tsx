@@ -300,8 +300,8 @@ export default function ChatMessage({
     let idx = 0;
     const totalLen = content.length;
     // 속도: 전체 길이에 따라 조절 (짧으면 느리게, 길면 빠르게)
-    const charsPerTick = Math.max(1, Math.ceil(totalLen / 120));
-    const interval = 15;
+    const charsPerTick = Math.max(2, Math.ceil(totalLen / 60));
+    const interval = 10;
 
     typingTimerRef.current = setInterval(() => {
       idx += charsPerTick;

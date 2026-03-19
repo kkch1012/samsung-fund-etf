@@ -180,12 +180,12 @@ function executeTool(
         toolInput.category as string | undefined
       );
       steps.push(`✅ ${results.length}개 상품 매칭`);
+      const top = results.slice(0, 5);
       return {
-        result: results.map((r) => ({
+        result: top.map((r) => ({
           ticker: r.ticker,
           name: r.name,
           category: r.category,
-          nav: r.nav,
           aum: r.aum,
           fee: r.fee,
           return1Y: r.return1Y,
@@ -207,18 +207,14 @@ function executeTool(
             ticker: detail.ticker,
             name: detail.name,
             category: detail.category,
-            subCategory: detail.subCategory,
             index: detail.index,
-            nav: detail.nav,
             aum: detail.aum,
             fee: detail.fee,
             return1M: detail.return1M,
             return3M: detail.return3M,
             return6M: detail.return6M,
             return1Y: detail.return1Y,
-            return3Y: detail.return3Y,
             mdd: detail.mdd,
-            description: detail.description,
           },
           steps,
           chartData: priceHistory.length > 0 ? {
@@ -843,7 +839,7 @@ export async function POST(request: NextRequest) {
   const openai = getOpenAI();
   let finalResponse = "";
   let toolCallCount = 0;
-  const maxToolCalls = 6;
+  const maxToolCalls = 4;
   const allCharts: ChartData[] = [];
   let lastCompareTickers: string[] | null = null;
   let loopRound = 0;
@@ -851,13 +847,14 @@ export async function POST(request: NextRequest) {
   // Tool use loop
   while (toolCallCount < maxToolCalls) {
     loopRound++;
-    const isLikelyFinalRound = loopRound > 1 && toolCallCount >= 2;
+    const isLikelyFinalRound = loopRound > 1 && toolCallCount >= 1;
     const response = await openai.chat.completions.create({
       model: selectedModel,
-      max_tokens: isLikelyFinalRound ? 2048 : 1024,
+      max_tokens: isLikelyFinalRound ? 1500 : 512,
       tools: openaiTools,
+      parallel_tool_calls: true,
       messages: openaiMessages,
-    });
+    } as Parameters<typeof openai.chat.completions.create>[0]);
 
     const choice = response.choices[0];
     const message = choice.message;

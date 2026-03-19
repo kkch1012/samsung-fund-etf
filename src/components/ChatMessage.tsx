@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   Bot,
@@ -228,6 +228,9 @@ interface ChatMessageProps {
   charts?: ChartDataItem[];
   imageUrl?: string;
   onAskQuestion?: (question: string) => void;
+  showProcessSteps?: boolean;
+  isTyping?: boolean;
+  onTypingComplete?: () => void;
 }
 
 export default function ChatMessage({
@@ -239,9 +242,49 @@ export default function ChatMessage({
   charts,
   imageUrl,
   onAskQuestion,
+  showProcessSteps = true,
+  isTyping = false,
+  onTypingComplete,
 }: ChatMessageProps) {
   const [showSteps, setShowSteps] = useState(true);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
+  const [displayedContent, setDisplayedContent] = useState("");
+  const [typingDone, setTypingDone] = useState(!isTyping);
+  const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 타이핑 효과
+  useEffect(() => {
+    if (role !== "assistant" || !isTyping) {
+      setDisplayedContent(content);
+      setTypingDone(true);
+      return;
+    }
+
+    setDisplayedContent("");
+    setTypingDone(false);
+    let idx = 0;
+    const totalLen = content.length;
+    // 속도: 전체 길이에 따라 조절 (짧으면 느리게, 길면 빠르게)
+    const charsPerTick = Math.max(1, Math.ceil(totalLen / 120));
+    const interval = 15;
+
+    typingTimerRef.current = setInterval(() => {
+      idx += charsPerTick;
+      if (idx >= totalLen) {
+        setDisplayedContent(content);
+        setTypingDone(true);
+        if (typingTimerRef.current) clearInterval(typingTimerRef.current);
+        onTypingComplete?.();
+      } else {
+        setDisplayedContent(content.slice(0, idx));
+      }
+    }, interval);
+
+    return () => {
+      if (typingTimerRef.current) clearInterval(typingTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTyping, content, role]);
 
   if (role === "user") {
     return (
@@ -270,8 +313,9 @@ export default function ChatMessage({
   }
 
   const parsedSteps = (steps || []).map(parseStep);
-  const { mainContent, questions: suggestedQuestions } = extractSuggestedQuestions(content);
-  const slotOptions = extractSlotFillingOptions(content);
+  const contentForParsing = typingDone ? content : displayedContent;
+  const { mainContent, questions: suggestedQuestions } = extractSuggestedQuestions(contentForParsing);
+  const slotOptions = typingDone ? extractSlotFillingOptions(content) : [];
 
   // 선택지 클릭 핸들러
   const handleOptionClick = (option: SlotOption) => {
@@ -324,7 +368,7 @@ export default function ChatMessage({
           )}
 
           {/* MCP/RAG 처리 과정 */}
-          {parsedSteps.length > 0 && (
+          {showProcessSteps && parsedSteps.length > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
               <button
                 onClick={() => setShowSteps(!showSteps)}

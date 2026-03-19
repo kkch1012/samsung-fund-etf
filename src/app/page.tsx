@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle, Zap, Brain } from "lucide-react";
+import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle, Zap, Brain, Eye, EyeOff } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
 import precachedData from "@/lib/precached-responses.json";
@@ -24,36 +24,36 @@ interface Message {
 
 const LOADING_STEPS = [
   { text: "🤖 에이전트 라우팅 중...", delay: 0 },
-  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 800 },
-  { text: "🔍 MCP Server 연결 중...", delay: 1600 },
-  { text: "📡 도구 호출 요청 전송...", delay: 2500 },
-  { text: "⚙️ MCP 도구 실행 중...", delay: 3500 },
-  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 4500 },
-  { text: "📄 RAG 벡터 검색 수행 중...", delay: 6000 },
-  { text: "📊 응답 데이터 구성 중...", delay: 8000 },
-  { text: "✍️ 최종 응답 생성 중...", delay: 10000 },
+  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 500 },
+  { text: "🔍 MCP Server 연결 중...", delay: 1000 },
+  { text: "📡 도구 호출 요청 전송...", delay: 1500 },
+  { text: "⚙️ MCP 도구 실행 중...", delay: 2200 },
+  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 3000 },
+  { text: "📄 RAG 벡터 검색 수행 중...", delay: 4000 },
+  { text: "📊 응답 데이터 구성 중...", delay: 5500 },
+  { text: "✍️ 최종 응답 생성 중...", delay: 7000 },
 ];
 
 const IMAGE_LOADING_STEPS = [
   { text: "🖼️ 이미지 수신 완료...", delay: 0 },
-  { text: "🔍 Claude Vision 모델 연결 중...", delay: 800 },
-  { text: "📊 차트 패턴/트렌드 분석 중...", delay: 2000 },
-  { text: "🎯 관련 KODEX ETF 매칭 중...", delay: 4000 },
-  { text: "🛡️ 컴플라이언스 검증 중...", delay: 6000 },
-  { text: "✍️ 분석 결과 생성 중...", delay: 8000 },
+  { text: "🔍 Claude Vision 모델 연결 중...", delay: 500 },
+  { text: "📊 차트 패턴/트렌드 분석 중...", delay: 1200 },
+  { text: "🎯 관련 KODEX ETF 매칭 중...", delay: 2500 },
+  { text: "🛡️ 컴플라이언스 검증 중...", delay: 4000 },
+  { text: "✍️ 분석 결과 생성 중...", delay: 5500 },
 ];
 
-// 프리캐시용 짧은 로딩 (3초)
+// 프리캐시용 짧은 로딩 (2초)
 const PRECACHE_LOADING_STEPS = [
   { text: "🤖 에이전트 라우팅 중...", delay: 0 },
-  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 400 },
-  { text: "🔍 MCP Server 연결 중...", delay: 800 },
-  { text: "📡 도구 호출 요청 전송...", delay: 1200 },
-  { text: "⚙️ MCP 도구 실행 중...", delay: 1600 },
-  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 2000 },
-  { text: "📄 RAG 벡터 검색 수행 중...", delay: 2300 },
-  { text: "📊 응답 데이터 구성 중...", delay: 2600 },
-  { text: "✍️ 최종 응답 생성 중...", delay: 2900 },
+  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 250 },
+  { text: "🔍 MCP Server 연결 중...", delay: 500 },
+  { text: "📡 도구 호출 요청 전송...", delay: 750 },
+  { text: "⚙️ MCP 도구 실행 중...", delay: 1000 },
+  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 1250 },
+  { text: "📄 RAG 벡터 검색 수행 중...", delay: 1500 },
+  { text: "📊 응답 데이터 구성 중...", delay: 1750 },
+  { text: "✍️ 최종 응답 생성 중...", delay: 2000 },
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,6 +66,8 @@ export default function Home() {
   const [loadingSteps, setLoadingSteps] = useState<string[]>([]);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
   const [selectedModel, setSelectedModel] = useState<"sonnet" | "haiku">("sonnet");
+  const [showProcessSteps, setShowProcessSteps] = useState(true);
+  const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -151,8 +153,9 @@ export default function Home() {
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
 
+      const msgId = (Date.now() + 1).toString();
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: msgId,
         role: "assistant",
         content: data.response,
         agent: data.agent,
@@ -161,6 +164,7 @@ export default function Home() {
         charts: data.charts,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setTypingMessageId(msgId);
     } catch (error) {
       console.error("Image analysis error:", error);
       setMessages((prev) => [
@@ -217,11 +221,12 @@ export default function Home() {
     timersRef.current = newTimers;
 
     if (isPrecached) {
-      // 프리캐시 응답: 3.5초 후 표시 (실제 동작하는 것처럼 보이게)
-      await new Promise((resolve) => setTimeout(resolve, 3500));
+      // 프리캐시 응답: 2.5초 후 표시
+      await new Promise((resolve) => setTimeout(resolve, 2500));
 
+      const msgId = (Date.now() + 1).toString();
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: msgId,
         role: "assistant",
         content: cached.response,
         agent: cached.agent,
@@ -230,6 +235,7 @@ export default function Home() {
         charts: cached.charts,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setTypingMessageId(msgId);
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
       setLoading(false);
@@ -258,8 +264,9 @@ export default function Home() {
 
       const data = await res.json();
 
+      const msgId = (Date.now() + 1).toString();
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: msgId,
         role: "assistant",
         content: data.response,
         agent: data.agent,
@@ -269,6 +276,7 @@ export default function Home() {
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
+      setTypingMessageId(msgId);
     } catch (error) {
       console.error("Chat error:", error);
       setMessages((prev) => [
@@ -403,6 +411,9 @@ export default function Home() {
                 charts={msg.charts}
                 imageUrl={msg.imageUrl}
                 onAskQuestion={(q) => sendMessage(q)}
+                showProcessSteps={showProcessSteps}
+                isTyping={msg.id === typingMessageId}
+                onTypingComplete={() => setTypingMessageId(null)}
               />
             ))}
 
@@ -521,31 +532,46 @@ export default function Home() {
               )}
             </button>
           </div>
-          {/* 모델 선택 + 면책조항 */}
+          {/* 모델 선택 + 토글 + 면책조항 */}
           <div className="flex items-center justify-between mt-2">
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-              <button
-                onClick={() => setSelectedModel("sonnet")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "sonnet"
+            <div className="flex items-center gap-2">
+              {/* 모델 선택 */}
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setSelectedModel("sonnet")}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "sonnet"
                     ? "bg-white text-blue-700 shadow-sm border border-blue-200"
                     : "text-gray-500 hover:text-gray-700"
-                  }`}
-              >
-                <Brain className="w-3 h-3" />
-                Sonnet
-              </button>
-              <button
-                onClick={() => setSelectedModel("haiku")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "haiku"
+                    }`}
+                >
+                  <Brain className="w-3 h-3" />
+                  Sonnet
+                </button>
+                <button
+                  onClick={() => setSelectedModel("haiku")}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "haiku"
                     ? "bg-white text-amber-700 shadow-sm border border-amber-200"
                     : "text-gray-500 hover:text-gray-700"
+                    }`}
+                >
+                  <Zap className="w-3 h-3" />
+                  Haiku
+                </button>
+              </div>
+              {/* AI 처리과정 토글 */}
+              <button
+                onClick={() => setShowProcessSteps(!showProcessSteps)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${showProcessSteps
+                    ? "bg-white text-green-700 border-green-200 shadow-sm"
+                    : "bg-gray-100 text-gray-400 border-transparent hover:text-gray-600"
                   }`}
+                title={showProcessSteps ? "AI 처리과정 숨기기" : "AI 처리과정 보기"}
               >
-                <Zap className="w-3 h-3" />
-                Haiku
+                {showProcessSteps ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                <span className="hidden sm:inline">처리과정</span>
               </button>
             </div>
-            <p className="text-[10px] text-gray-400">
+            <p className="text-[10px] text-gray-400 hidden sm:block">
               본 서비스는 투자 참고용이며, 투자 판단의 책임은 투자자 본인에게
               있습니다. ⓒ 삼성자산운용
             </p>

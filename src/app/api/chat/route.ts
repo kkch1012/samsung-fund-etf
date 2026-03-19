@@ -905,15 +905,18 @@ export async function POST(request: NextRequest) {
   }
 
   // ====== LLM 스트리밍 호출 (SSE) ======
-  const dataContext = prefetchedData.length > 0
-    ? `\n\n[조회된 데이터 — 이 데이터만으로 답변하세요]\n${prefetchedData.join("\n")}`
-    : "";
-
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: agent.systemPrompt + additionalSystemMessage + dataContext },
+    { role: "system", content: agent.systemPrompt + additionalSystemMessage },
     ...history,
     { role: "user", content: userMessage },
   ];
+
+  if (prefetchedData.length > 0) {
+    openaiMessages.push({
+      role: "system",
+      content: `[MCP 도구 조회 결과 — 참조 전용, 원시 JSON/ticker/코드를 그대로 출력하지 마세요. 자연어로 정리하여 답변하세요.]\n${prefetchedData.join("\n")}`,
+    });
+  }
 
   if (toolCallCount > 0) {
     allSteps.push("✅ 데이터 수집 완료 → 응답 생성 시작");

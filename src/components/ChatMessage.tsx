@@ -56,13 +56,13 @@ function extractSuggestedQuestions(content: string): { mainContent: string; ques
   const questions: string[] = [];
   let cutIndex = lines.length;
 
-  // 끝에서부터 추천 질문 패턴 탐색
+  // 끝에서부터 추천 질문 패턴 탐색 (최대 5개)
   for (let i = lines.length - 1; i >= 0; i--) {
+    if (questions.length >= 5) break;
     const line = lines[i].trim();
-    // "- 질문?" 또는 "1. 질문?" 패턴
     const bulletMatch = line.match(/^[-•]\s*(.+[?？])$/);
-    const numberMatch = line.match(/^\d+[.)]\s*(.+[?？])$/);
-    // "**질문?**" 패턴
+    // 번호는 1~9만 허용 (17. 같은 본문 목록 오인 방지)
+    const numberMatch = line.match(/^[1-9][.)]\s*(.+[?？])$/);
     const boldMatch = line.match(/^\*\*(.+[?？])\*\*$/);
 
     if (bulletMatch) {
@@ -75,12 +75,10 @@ function extractSuggestedQuestions(content: string): { mainContent: string; ques
       questions.unshift(boldMatch[1].trim());
       cutIndex = i;
     } else if (line === "" && questions.length > 0) {
-      // 빈 줄은 건너뛰기
       cutIndex = i;
       continue;
     } else if (questions.length > 0) {
-      // 추천 질문 헤더 라인 (예: "추가 질문:", "더 궁금한 점:") 제거
-      if (line.includes("궁금") || line.includes("질문") || line.includes("추가") || line.includes("알고 싶") || line.includes("문의")) {
+      if (line.includes("궁금") || line.includes("질문") || line.includes("추가") || line.includes("알고 싶") || line.includes("문의") || line.includes("물어보세요")) {
         cutIndex = i;
       }
       break;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle, Zap, Brain, Eye, EyeOff } from "lucide-react";
+import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle, Zap, Brain, Eye, EyeOff, Crown } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
 
@@ -59,7 +59,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingSteps, setLoadingSteps] = useState<string[]>([]);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "haiku">("haiku");
+  const [selectedModel, setSelectedModel] = useState<"opus" | "sonnet" | "haiku">("haiku");
   const [showProcessSteps, setShowProcessSteps] = useState(true);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -505,6 +505,17 @@ export default function Home() {
             <div className="flex items-center gap-2">
               {/* 모델 선택 */}
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedModel("opus")}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "opus"
+                    ? "bg-white text-purple-700 shadow-sm border border-purple-200"
+                    : "text-gray-500 hover:text-gray-700"
+                    }`}
+                >
+                  <Crown className="w-3 h-3" />
+                  Opus
+                </button>
                 <button
                   type="button"
                   onClick={() => setSelectedModel("sonnet")}

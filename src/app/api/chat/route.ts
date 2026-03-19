@@ -482,6 +482,7 @@ function executeTool(
 }
 
 const MODEL_MAP: Record<string, string> = {
+  opus: "anthropic/claude-opus-4",
   sonnet: "anthropic/claude-sonnet-4",
   haiku: "anthropic/claude-3.5-haiku",
 };
@@ -726,7 +727,12 @@ export async function POST(request: NextRequest) {
 
   // 3. OpenRouter API 호출
   const allSteps: string[] = [];
-  const modelLabel = requestedModel === "haiku" ? "Claude 3.5 Haiku ⚡" : "Claude Sonnet 4 🧠";
+  const modelLabels: Record<string, string> = {
+    opus: "Claude Opus 4 👑",
+    sonnet: "Claude Sonnet 4 🧠",
+    haiku: "Claude 3.5 Haiku ⚡",
+  };
+  const modelLabel = modelLabels[requestedModel || "haiku"] || modelLabels.haiku;
   allSteps.push(
     `🤖 에이전트 라우팅 → ${agent.displayName} (${agent.description})`
   );

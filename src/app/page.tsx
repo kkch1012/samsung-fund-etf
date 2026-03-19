@@ -209,7 +209,7 @@ export default function Home() {
     );
     timersRef.current = newTimers;
 
-    // API 호출
+    // API 스트리밍 호출
     try {
       const conversationHistory = messages.map((m) => ({
         role: m.role,
@@ -228,22 +228,103 @@ export default function Home() {
 
       if (!res.ok) throw new Error(`API error: ${res.status}`);
 
-      const data = await res.json();
-
       const msgId = (Date.now() + 1).toString();
-      const assistantMsg: Message = {
+      let streamedContent = "";
+      let metaReceived = false;
+      let msgMeta: Partial<Message> = {};
+
+      // 스트리밍 메시지를 먼저 추가 (빈 내용)
+      const placeholderMsg: Message = {
         id: msgId,
         role: "assistant",
-        content: data.response,
-        agent: data.agent,
-        steps: data.steps,
-        toolCallCount: data.toolCallCount,
-        charts: data.charts,
-        suggestedActions: data.suggestedActions,
+        content: "",
       };
+      setMessages((prev) => [...prev, placeholderMsg]);
 
-      setMessages((prev) => [...prev, assistantMsg]);
-      setTypingMessageId(msgId);
+      // 로딩 종료 (타이핑 표시로 전환)
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+      setLoading(false);
+      setLoadingSteps([]);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const stripped = line.replace(/^data: /, "").trim();
+          if (!stripped) continue;
+          try {
+            const evt = JSON.parse(stripped);
+            if (evt.type === "meta") {
+              metaReceived = true;
+              msgMeta = {
+                agent: evt.agent,
+                steps: evt.steps,
+                toolCallCount: evt.toolCallCount,
+                charts: evt.charts,
+                suggestedActions: evt.suggestedActions,
+              };
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId ? { ...m, ...msgMeta } : m
+                )
+              );
+            } else if (evt.type === "token") {
+              streamedContent += evt.token;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId ? { ...m, content: streamedContent } : m
+                )
+              );
+            } else if (evt.type === "replace") {
+              streamedContent = evt.content;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msgId ? { ...m, content: streamedContent } : m
+                )
+              );
+            } else if (evt.type === "done") {
+              // 완료
+            }
+          } catch {
+            // 파싱 실패 무시
+          }
+        }
+      }
+
+      // 스트리밍 완료 — 최종 상태 반영
+      if (!metaReceived) {
+        // 비스트리밍 폴백 (슬롯 필링 등 즉시 응답)
+        try {
+          const fallback = JSON.parse(streamedContent || buffer);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? {
+                    ...m,
+                    content: fallback.response || streamedContent,
+                    agent: fallback.agent,
+                    steps: fallback.steps,
+                    toolCallCount: fallback.toolCallCount,
+                    charts: fallback.charts,
+                    suggestedActions: fallback.suggestedActions,
+                  }
+                : m
+            )
+          );
+        } catch {
+          // JSON이 아닌 경우 streamedContent 그대로 유지
+        }
+      }
     } catch (error) {
       console.error("Chat error:", error);
       setMessages((prev) => [
@@ -256,8 +337,6 @@ export default function Home() {
           steps: ["❌ API 호출 실패"],
         },
       ]);
-    } finally {
-      // 타이머 정리
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
       setLoading(false);
@@ -380,8 +459,8 @@ export default function Home() {
                 imageUrl={msg.imageUrl}
                 onAskQuestion={(q) => sendMessage(q)}
                 showProcessSteps={showProcessSteps}
-                isTyping={msg.id === typingMessageId}
-                onTypingComplete={() => setTypingMessageId(null)}
+                isTyping={false}
+                onTypingComplete={() => {}}
               />
             ))}
 

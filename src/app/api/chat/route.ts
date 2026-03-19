@@ -904,7 +904,7 @@ export async function POST(request: NextRequest) {
     prefetchedData.push(`[경쟁사대안] ${JSON.stringify(altResult)}`);
   }
 
-  // ====== LLM 1회 호출 (도구 없이, 데이터를 컨텍스트로) ======
+  // ====== LLM 스트리밍 호출 (SSE) ======
   const dataContext = prefetchedData.length > 0
     ? `\n\n[조회된 데이터 — 이 데이터만으로 답변하세요]\n${prefetchedData.join("\n")}`
     : "";
@@ -915,52 +915,72 @@ export async function POST(request: NextRequest) {
     { role: "user", content: userMessage },
   ];
 
-  const openai = getOpenAI();
-  let finalResponse = "";
-
-  const response = await openai.chat.completions.create({
-    model: selectedModel,
-    max_tokens: 1500,
-    messages: openaiMessages,
-  });
-  finalResponse = response.choices[0]?.message?.content || "";
-
-  // === 투자 시점 질문 거절 멘트 강제 삽입 (항상) ===
-  if (isTimingQuestion) {
-    // 모델이 자체 거절 문구를 넣더라도, 시연 일관성을 위해 항상 프리픽스를 맨 앞에 삽입
-    // 모델이 쓴 중복 거절 문구는 자연스럽게 본문에 녹아들어 문제 없음
-    if (!finalResponse.startsWith("🚫")) {
-      finalResponse = TIMING_REJECTION_PREFIX + finalResponse;
-    }
-    allSteps.push("🛡️ 거절 가드레일 → 투자 판단 거절 프리픽스 강제 삽입 (금융소비자보호법)");
-  }
-
-  // === 자가 교정 단계 표시 (Self-Correction) ===
   if (toolCallCount > 0) {
-    allSteps.push("🔄 Self-Correction [쿼리 품질 검증] 검색 결과 충분성 확인");
-    allSteps.push("✅ 검색 결과 품질 양호 → 추가 검색 불필요");
+    allSteps.push("✅ 데이터 수집 완료 → 응답 생성 시작");
   }
 
-  // === Guardrails 적용 ===
-  const { filtered, guardrailSteps } = applyGuardrails(finalResponse, allSteps);
-  finalResponse = filtered;
+  const { filtered: _f, guardrailSteps } = applyGuardrails("", allSteps);
   allSteps.push(...guardrailSteps);
 
   const suggestedActions = lastCompareTickers
     ? buildCompareSuggestedActions(lastCompareTickers)
     : undefined;
 
-  return Response.json({
-    response: finalResponse,
-    agent: {
-      type: agentType,
-      name: agent.displayName,
-    },
+  // 메타데이터를 먼저 보내고, 그 뒤에 텍스트 스트리밍
+  const meta = JSON.stringify({
+    agent: { type: agentType, name: agent.displayName },
     steps: allSteps,
     toolCallCount,
     charts: allCharts.length > 0 ? allCharts : undefined,
-    suggestedActions:
-      suggestedActions && suggestedActions.length > 0 ? suggestedActions : undefined,
+    suggestedActions: suggestedActions && suggestedActions.length > 0 ? suggestedActions : undefined,
+  });
+
+  const timingPrefix = isTimingQuestion ? TIMING_REJECTION_PREFIX : "";
+
+  const openai = getOpenAI();
+  const stream = await openai.chat.completions.create({
+    model: selectedModel,
+    max_tokens: 1500,
+    stream: true,
+    messages: openaiMessages,
+  });
+
+  const encoder = new TextEncoder();
+
+  const readable = new ReadableStream({
+    async start(controller) {
+      // 1) 메타데이터 라인
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "meta", ...JSON.parse(meta) })}\n\n`));
+      // 2) 거절 프리픽스 (있으면)
+      if (timingPrefix) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "token", token: timingPrefix })}\n\n`));
+      }
+      // 3) 토큰 스트리밍
+      let fullText = timingPrefix;
+      for await (const chunk of stream) {
+        const token = chunk.choices[0]?.delta?.content || "";
+        if (token) {
+          fullText += token;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "token", token })}\n\n`));
+        }
+      }
+      // 4) 가드레일 후처리
+      const { filtered } = applyGuardrails(fullText, []);
+      if (filtered !== fullText) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "replace", content: filtered })}\n\n`));
+      }
+      // 5) 완료
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
+      controller.close();
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
   });
 }
 

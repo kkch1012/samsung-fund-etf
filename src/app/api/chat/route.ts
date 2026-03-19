@@ -687,13 +687,14 @@ export async function POST(request: NextRequest) {
 
   // === 가드레일 1.5: 시장 범위(국내/미국) 슬롯 필링 강제 ===
   // 섹터형 질문이 애매하면 도구 호출 전에 반드시 되묻는다.
-  const lastAssistantMsg = [...history].reverse().find((m) => m.role === "assistant");
-  const askedMarketScopeBefore = !!lastAssistantMsg && (
-    lastAssistantMsg.content.includes("국내 ETF인가요, 미국 ETF인가요") ||
-    lastAssistantMsg.content.includes("국내 ETF를 찾으시나요, 미국 ETF를 찾으시나요")
+  // 같은 대화에서 이미 슬롯 필링을 했으면 다시 묻지 않음 (전체 히스토리 검색)
+  const alreadyAskedScope = history.some(
+    (m) =>
+      m.role === "assistant" &&
+      (m.content.includes("국내 ETF") && m.content.includes("미국 ETF"))
   );
 
-  if (!askedMarketScopeBefore && needsMarketScopeClarification(userMessage)) {
+  if (!alreadyAskedScope && needsMarketScopeClarification(userMessage)) {
     return Response.json({
       response: `좋은 질문입니다. 더 정확히 찾기 위해 한 가지만 여쭤볼게요.\n\n1️⃣ **국내 ETF**를 찾으시나요, **미국 ETF**를 찾으시나요?\n2️⃣ 그리고 기준은 **수익률 / 변동성 / 보수(수수료) / 순자산(AUM)** 중 무엇이 중요하신가요?\n\n예: "국내, 수익률 기준"`,
       agent: {

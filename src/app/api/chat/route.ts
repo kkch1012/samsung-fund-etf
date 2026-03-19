@@ -904,21 +904,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // === 투자 시점 질문 거절 멘트 강제 삽입 (모델이 거절 멘트를 생략한 경우) ===
+  // === 투자 시점 질문 거절 멘트 강제 삽입 (항상) ===
   if (isTimingQuestion) {
-    const hasRejection = finalResponse.includes("드리기 어렵습니다") ||
-      finalResponse.includes("권유는 어렵") ||
-      finalResponse.includes("판단을 드리기") ||
-      finalResponse.includes("매수/매도 권유") ||
-      finalResponse.includes("투자자 본인의 결정") ||
-      finalResponse.includes("투자 판단은");
-
-    if (!hasRejection) {
+    // 모델이 자체 거절 문구를 넣더라도, 시연 일관성을 위해 항상 프리픽스를 맨 앞에 삽입
+    // 모델이 쓴 중복 거절 문구는 자연스럽게 본문에 녹아들어 문제 없음
+    if (!finalResponse.startsWith("🚫")) {
       finalResponse = TIMING_REJECTION_PREFIX + finalResponse;
-      allSteps.push("🛡️ 거절 가드레일 → 모델 응답에 거절 멘트 누락 감지 → 자동 삽입");
-    } else {
-      allSteps.push("✅ 거절 가드레일 → 모델 응답에 거절 멘트 포함 확인");
     }
+    allSteps.push("🛡️ 거절 가드레일 → 투자 판단 거절 프리픽스 강제 삽입 (금융소비자보호법)");
   }
 
   // === 자가 교정 단계 표시 (Self-Correction) ===

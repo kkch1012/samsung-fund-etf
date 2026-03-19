@@ -58,7 +58,7 @@ const FORBIDDEN_PATTERNS = [
   /꼭\s*(사|매수|투자)\s*(하세요|해야)/,
 ];
 
-const DISCLAIMER = "\n\n> ⚠️ 본 정보는 투자 참고용이며, 투자 판단은 투자자 본인의 책임입니다. 과거 수익률이 미래 수익을 보장하지 않습니다.";
+const DISCLAIMER = "\n\n⚠️ 본 정보는 투자 참고용이며, 투자 판단은 투자자 본인의 책임입니다. 과거 수익률이 미래 수익을 보장하지 않습니다.";
 
 function applyGuardrails(
   response: string,

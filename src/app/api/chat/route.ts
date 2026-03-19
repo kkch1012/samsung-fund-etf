@@ -838,7 +838,7 @@ export async function POST(request: NextRequest) {
   const openai = getOpenAI();
   let finalResponse = "";
   let toolCallCount = 0;
-  const maxToolCalls = 10;
+  const maxToolCalls = 6;
   const allCharts: ChartData[] = [];
   let lastCompareTickers: string[] | null = null;
   let loopRound = 0;
@@ -846,11 +846,10 @@ export async function POST(request: NextRequest) {
   // Tool use loop
   while (toolCallCount < maxToolCalls) {
     loopRound++;
-    // 도구 호출 라운드는 작은 max_tokens로 빠르게, 마지막(최종 텍스트)은 크게
     const isLikelyFinalRound = loopRound > 1 && toolCallCount >= 2;
     const response = await openai.chat.completions.create({
       model: selectedModel,
-      max_tokens: isLikelyFinalRound ? 4096 : 1024,
+      max_tokens: isLikelyFinalRound ? 2048 : 1024,
       tools: openaiTools,
       messages: openaiMessages,
     });

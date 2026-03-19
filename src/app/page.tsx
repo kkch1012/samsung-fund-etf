@@ -59,7 +59,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingSteps, setLoadingSteps] = useState<string[]>([]);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "haiku">("sonnet");
+  const [selectedModel, setSelectedModel] = useState<"sonnet" | "haiku">("haiku");
   const [showProcessSteps, setShowProcessSteps] = useState(true);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);

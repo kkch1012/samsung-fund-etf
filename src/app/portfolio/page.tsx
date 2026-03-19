@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Brain, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -118,12 +118,16 @@ const PRESET_PORTFOLIOS: PresetPortfolio[] = [
 
 const STORAGE_KEY = "kodex-quiz-result";
 
-function getInitialPortfolioState() {
-  let presets = PRESET_PORTFOLIOS;
-  let selectedIdx = 2; // 균형 추구형 기본
-  let initialWeights = PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight);
+export default function PortfolioPage() {
+  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(PRESET_PORTFOLIOS);
+  const [selectedPreset, setSelectedPreset] = useState(2);
+  const [investAmount, setInvestAmount] = useState(1000);
+  const [weights, setWeights] = useState<number[]>(PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight));
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
-  if (typeof window !== "undefined") {
+  // localStorage에서 AI 포트폴리오 로드 (hydration mismatch 방지)
+  useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -135,27 +139,15 @@ function getInitialPortfolioState() {
             isAI: true,
             etfs: parsed.aiPortfolio,
           };
-          presets = [aiPreset, ...PRESET_PORTFOLIOS];
-          selectedIdx = 0;
-          initialWeights = parsed.aiPortfolio.map((e: ETFAllocation) => e.weight);
+          setAllPresets([aiPreset, ...PRESET_PORTFOLIOS]);
+          setSelectedPreset(0);
+          setWeights(parsed.aiPortfolio.map((e: ETFAllocation) => e.weight));
         }
       }
     } catch {
       // ignore
     }
-  }
-
-  return { presets, selectedIdx, initialWeights };
-}
-
-export default function PortfolioPage() {
-  const [initial] = useState(getInitialPortfolioState);
-  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(initial.presets);
-  const [selectedPreset, setSelectedPreset] = useState(initial.selectedIdx);
-  const [investAmount, setInvestAmount] = useState(1000);
-  const [weights, setWeights] = useState<number[]>(initial.initialWeights);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  }, []);
 
   const portfolio = allPresets[selectedPreset];
 

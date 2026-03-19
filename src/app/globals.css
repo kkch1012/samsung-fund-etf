@@ -33,6 +33,19 @@ body {
   border-radius: 3px;
 }
 
+/* 채팅 본문 여백 제한 */
+.chat-content br + br {
+  display: none;
+}
+.chat-content h2, .chat-content h3 {
+  margin-top: 8px !important;
+  margin-bottom: 2px !important;
+}
+.chat-content li {
+  margin-top: 1px;
+  margin-bottom: 1px;
+}
+
 /* 마크다운 테이블 */
 .chat-content table {
   border-collapse: collapse;

@@ -604,13 +604,10 @@ function formatMarkdown(text: string): string {
     /⚠️(.+?)$/gm,
     '<div class="bg-amber-50 border border-amber-200 rounded px-3 py-1.5 text-xs text-amber-800 mt-2">⚠️$1</div>'
   );
-  // 연속 빈 줄 제한 (3줄 이상 → 1줄)
-  html = html.replace(/\n{3,}/g, "\n\n");
-  // 줄바꿈
-  html = html.replace(/\n\n/g, "<br/><br/>");
+  // 연속 빈 줄 정리
+  html = html.replace(/\n{2,}/g, "\n");
   html = html.replace(/\n/g, "<br/>");
-  // 연속 <br/> 제한
-  html = html.replace(/(<br\s*\/?>){3,}/g, "<br/><br/>");
+  html = html.replace(/(<br\s*\/?>){2,}/g, "<br/>");
 
   return html;
 }

@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f9fa;
+  --foreground: #1a1a2e;
+  --samsung-blue: #1428a0;
+  --samsung-light: #4b6cb7;
+  --accent: #0066ff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* 스크롤바 커스텀 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  border-radius: 3px;
+}
+
+/* 마크다운 테이블 */
+.chat-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.chat-content th, .chat-content td {
+  border: 1px solid #e0e0e0;
+  padding: 6px 10px;
+  text-align: left;
+}
+.chat-content th {
+  background: #f0f4ff;
+  font-weight: 600;
+}
+.chat-content tr:nth-child(even) {
+  background: #fafbff;
+}
+
+/* 스텝 애니메이션 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.step-animate {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+@keyframes pulse-dot {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+.typing-dot:nth-child(1) { animation: pulse-dot 1.4s infinite 0s; }
+.typing-dot:nth-child(2) { animation: pulse-dot 1.4s infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: pulse-dot 1.4s infinite 0.4s; }
+
+/* 차트 컨테이너 */
+.recharts-wrapper {
+  font-size: 12px;
+}
+
+/* 아키텍처 페이지 애니메이션 */
+@keyframes flow-down {
+  0% { opacity: 0; transform: translateY(-10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.flow-animate {
+  animation: flow-down 0.5s ease-out forwards;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(20, 40, 160, 0.1); }
+  50% { box-shadow: 0 0 12px 4px rgba(20, 40, 160, 0.15); }
+}
+.glow-on-hover:hover {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* 카드 호버 */
+.card-hover {
+  transition: all 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}

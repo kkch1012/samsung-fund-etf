@@ -414,7 +414,7 @@ export async function POST(request: NextRequest) {
   // Tool use loop
   while (toolCallCount < maxToolCalls) {
     const response = await openai.chat.completions.create({
-      model: "stepfun/step-3.5-flash",
+      model: "anthropic/claude-sonnet-4",
       max_tokens: 8192,
       tools: openaiTools,
       messages: openaiMessages,

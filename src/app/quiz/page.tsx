@@ -4,6 +4,30 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, RotateCcw, ChevronRight, Loader2, User, Sparkles } from "lucide-react";
 
+function formatQuizMarkdown(text: string): string {
+  let html = text;
+  html = html.replace(
+    /\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g,
+    (match) => {
+      const rows = match.trim().split("\n");
+      const headers = rows[0].split("|").filter(c => c.trim()).map(c => `<th style="padding:6px 10px;border:1px solid #e0e0e0;background:#f0f4ff;font-weight:600;text-align:left;font-size:12px">${c.trim()}</th>`).join("");
+      const body = rows.slice(2).map(row =>
+        `<tr>${row.split("|").filter(c => c.trim()).map(c => `<td style="padding:6px 10px;border:1px solid #e0e0e0;font-size:12px">${c.trim()}</td>`).join("")}</tr>`
+      ).join("");
+      return `<table style="border-collapse:collapse;width:100%;margin:8px 0"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+  );
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/^### (.+)$/gm, '<h3 style="font-size:14px;font-weight:700;margin:12px 0 4px">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:15px;font-weight:700;margin:12px 0 4px">$1</h2>');
+  html = html.replace(/^- (.+)$/gm, '<li style="margin-left:16px;list-style:disc">$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, '<li style="margin-left:16px;list-style:decimal">$1</li>');
+  html = html.replace(/⚠️(.+?)$/gm, '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 12px;font-size:12px;color:#92400e;margin-top:8px">⚠️$1</div>');
+  html = html.replace(/\n\n/g, "<br/><br/>");
+  html = html.replace(/\n/g, "<br/>");
+  return html;
+}
+
 interface Question {
   id: number;
   question: string;
@@ -246,6 +270,9 @@ export default function QuizPage() {
     }
   }, []);
 
+  const [productRec, setProductRec] = useState<string | null>(null);
+  const [productLoading, setProductLoading] = useState(false);
+
   const handleAnswer = (score: number, label: string) => {
     const newAnswers = [...answers, score];
     const newLabels = [...answerLabels, label];
@@ -255,14 +282,42 @@ export default function QuizPage() {
     if (currentQ < QUESTIONS.length - 1) {
       setCurrentQ(currentQ + 1);
     } else {
-      // 결과 계산
       const total = newAnswers.reduce((a, b) => a + b, 0);
       setTotalScore(total);
       const investorType = getInvestorType(total);
       setResult(investorType);
+      // AI 분석은 이제 버튼 클릭 시 호출
+    }
+  };
 
-      // AI 분석 호출
-      fetchAIAnalysis(newAnswers, newLabels, total, investorType);
+  const startAIAnalysis = () => {
+    if (analyzing || aiAnalysis) return;
+    const total = answers.reduce((a, b) => a + b, 0);
+    const investorType = getInvestorType(total);
+    fetchAIAnalysis(answers, answerLabels, total, investorType);
+  };
+
+  const fetchProductRecommendation = async () => {
+    if (productLoading || !result) return;
+    setProductLoading(true);
+    setProductRec(null);
+
+    const type = result;
+    const prompt = `나는 투자 성향 진단 결과 "${type.type}" (위험등급 ${type.riskLevel}/6) 유형이야. ${type.description} 나에게 어울리는 KODEX ETF 상품을 구체적으로 추천해줘. 각 상품의 수익률, 보수, 특징을 포함해서 알려줘.`;
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: prompt }], model: "haiku" }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const data = await res.json();
+      setProductRec(data.response || "추천 결과를 가져올 수 없습니다.");
+    } catch {
+      setProductRec("AI 추천 중 오류가 발생했습니다. 다시 시도해 주세요.");
+    } finally {
+      setProductLoading(false);
     }
   };
 
@@ -633,6 +688,18 @@ export default function QuizPage() {
             </div>
           </div>
 
+          {/* AI 분석 버튼 */}
+          {!aiAnalysis && !analyzing && (
+            <button
+              type="button"
+              onClick={startAIAnalysis}
+              className="w-full py-4 rounded-xl bg-[#1428a0] text-white font-bold hover:bg-[#0f1f7a] transition-colors flex items-center justify-center gap-2 text-sm shadow-lg"
+            >
+              <Sparkles className="w-5 h-5" />
+              AI로 분석하기
+            </button>
+          )}
+
           {/* AI 분석 중 */}
           {analyzing && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -806,6 +873,47 @@ export default function QuizPage() {
               </div>
             </div>
           </div>
+
+          {/* 나에게 어울리는 상품 추천 */}
+          {aiAnalysis && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  나에게 어울리는 상품
+                </h3>
+                <button
+                  type="button"
+                  onClick={fetchProductRecommendation}
+                  disabled={productLoading}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                >
+                  {productLoading ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" />추천 중...</>
+                  ) : (
+                    <><Sparkles className="w-3.5 h-3.5" />AI 상품 추천받기</>
+                  )}
+                </button>
+              </div>
+              {!productRec && !productLoading && (
+                <p className="text-xs text-gray-400">
+                  진단 결과를 바탕으로 AI가 실제 KODEX ETF 상품을 수익률·보수 데이터와 함께 추천합니다.
+                </p>
+              )}
+              {productLoading && (
+                <div className="flex items-center gap-2 py-6 justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
+                  <span className="text-sm text-gray-500">맞춤 상품을 추천하고 있습니다...</span>
+                </div>
+              )}
+              {productRec && !productLoading && (
+                <div
+                  className="prose prose-sm max-w-none text-[13px] leading-relaxed text-gray-700"
+                  dangerouslySetInnerHTML={{ __html: formatQuizMarkdown(productRec) }}
+                />
+              )}
+            </div>
+          )}
 
           {/* 면책조항 */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">

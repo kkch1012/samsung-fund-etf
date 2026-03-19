@@ -713,15 +713,7 @@ export async function POST(request: NextRequest) {
   // === 가드레일 2: 투자 시점 판단 질문 감지 ===
   const isTimingQuestion = isInvestmentTimingQuestion(userMessage);
 
-  // 에이전트가 사용할 도구 필터링
-  const agentTools = ETF_TOOLS.filter((t) =>
-    agent.tools.includes(t.name)
-  );
-
-  // OpenAI function format으로 변환
-  const openaiTools = agentTools.length > 0 ? convertToolsToOpenAI(agentTools) : undefined;
-
-  // 3. OpenRouter API 호출
+  // 3. 데이터 사전 수집 + LLM 1회 호출
   const allSteps: string[] = [];
   const modelLabels: Record<string, string> = {
     opus: "Claude Opus 4 👑",
@@ -830,81 +822,108 @@ export async function POST(request: NextRequest) {
     allSteps.push("🔄 경쟁사 전환 시연 모드 → find_kodex_alternative 우선");
   }
 
+  // ====== 서버 사전 도구 호출 (LLM 왕복 최소화) ======
+  const allCharts: ChartData[] = [];
+  let lastCompareTickers: string[] | null = null;
+  let toolCallCount = 0;
+  const prefetchedData: string[] = [];
+
+  // 메시지에서 ETF 키워드/티커 추출
+  const mentionedTickers: string[] = [];
+  const tickerMatches = userMessage.match(/\b\d{6}\b/g);
+  if (tickerMatches) mentionedTickers.push(...tickerMatches);
+
+  // KODEX 이름으로 검색할 키워드 추출
+  const searchKeywords: string[] = [];
+  const kodexNameMatch = userMessage.match(/KODEX\s+([^\s,]+(?:\s*[^\s,]+)?)/gi);
+  if (kodexNameMatch) {
+    for (const m of kodexNameMatch) {
+      const kw = m.replace(/^KODEX\s+/i, "").trim();
+      if (kw.length >= 2) searchKeywords.push(kw);
+    }
+  }
+  // 일반 키워드 (반도체, 배당 등)
+  const sectorKws = ["반도체", "2차전지", "배터리", "바이오", "배당", "채권", "금리", "원자재", "금", "S&P500", "나스닥", "레버리지", "인버스"];
+  for (const kw of sectorKws) {
+    if (userMessage.toLowerCase().includes(kw.toLowerCase())) searchKeywords.push(kw);
+  }
+
+  // 1단계: 검색 (키워드가 있으면)
+  const uniqueKws = [...new Set(searchKeywords)].slice(0, 3);
+  for (const kw of uniqueKws) {
+    const { result, steps, } = executeTool("search_etf_products", { query: kw });
+    allSteps.push(...steps);
+    toolCallCount++;
+    prefetchedData.push(`[검색 "${kw}"] ${JSON.stringify(result)}`);
+    // 검색 결과에서 상위 티커 추출
+    const arr = result as { ticker: string }[];
+    if (Array.isArray(arr)) {
+      for (const item of arr.slice(0, 2)) {
+        if (item.ticker && !mentionedTickers.includes(item.ticker)) {
+          mentionedTickers.push(item.ticker);
+        }
+      }
+    }
+  }
+
+  // 2단계: 상세 + 수익률 (티커가 있으면)
+  const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
+  for (const ticker of uniqueTickers) {
+    const { result: detailResult, steps: detailSteps, chartData } = executeTool("get_etf_detail", { ticker });
+    allSteps.push(...detailSteps);
+    toolCallCount++;
+    if (chartData) allCharts.push(chartData);
+    prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)}`);
+
+    const { result: perfResult, steps: perfSteps, chartData: perfChart } = executeTool("get_etf_performance", { ticker });
+    allSteps.push(...perfSteps);
+    toolCallCount++;
+    if (perfChart) allCharts.push(perfChart);
+    prefetchedData.push(`[수익률 ${ticker}] ${JSON.stringify(perfResult)}`);
+  }
+
+  // 3단계: 비교 (2개 이상 티커)
+  if (uniqueTickers.length >= 2) {
+    const { result: cmpResult, steps: cmpSteps, chartData: cmpChart, extraCharts } = executeTool("compare_etfs", { tickers: uniqueTickers });
+    allSteps.push(...cmpSteps);
+    toolCallCount++;
+    if (cmpChart) allCharts.push(cmpChart);
+    if (extraCharts) allCharts.push(...extraCharts);
+    lastCompareTickers = uniqueTickers;
+    prefetchedData.push(`[비교] ${JSON.stringify(cmpResult)}`);
+  }
+
+  // 4단계: 경쟁사 대안
+  if (isCompetitorSwitchMessage(userMessage)) {
+    const compName = userMessage.match(/(?:TIGER|ACE|RISE|SOL|ARIRANG)\s*[^\s,?!]*/i)?.[0] || userMessage;
+    const { result: altResult, steps: altSteps, chartData: altChart, extraCharts: altExtra } = executeTool("find_kodex_alternative", { competitor_name: compName });
+    allSteps.push(...altSteps);
+    toolCallCount++;
+    if (altChart) allCharts.push(altChart);
+    if (altExtra) allCharts.push(...altExtra);
+    prefetchedData.push(`[경쟁사대안] ${JSON.stringify(altResult)}`);
+  }
+
+  // ====== LLM 1회 호출 (도구 없이, 데이터를 컨텍스트로) ======
+  const dataContext = prefetchedData.length > 0
+    ? `\n\n[조회된 데이터 — 이 데이터만으로 답변하세요]\n${prefetchedData.join("\n")}`
+    : "";
+
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: agent.systemPrompt + additionalSystemMessage },
+    { role: "system", content: agent.systemPrompt + additionalSystemMessage + dataContext },
     ...history,
     { role: "user", content: userMessage },
   ];
 
   const openai = getOpenAI();
   let finalResponse = "";
-  let toolCallCount = 0;
-  const maxToolCalls = 4;
-  const allCharts: ChartData[] = [];
-  let lastCompareTickers: string[] | null = null;
-  let loopRound = 0;
 
-  // Tool use loop
-  while (toolCallCount < maxToolCalls) {
-    loopRound++;
-    const isLikelyFinalRound = loopRound > 1 && toolCallCount >= 1;
-    const response = await openai.chat.completions.create({
-      model: selectedModel,
-      max_tokens: isLikelyFinalRound ? 1500 : 512,
-      tools: openaiTools,
-      parallel_tool_calls: true,
-      messages: openaiMessages,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
-
-    const choice = response.choices[0];
-    const message = choice.message;
-
-    // tool_calls 처리
-    if (choice.finish_reason === "tool_calls" || (message.tool_calls && message.tool_calls.length > 0)) {
-      // assistant message 추가
-      openaiMessages.push(message);
-
-      for (const toolCall of message.tool_calls || []) {
-        if (toolCall.type !== "function") continue;
-        toolCallCount++;
-        let toolInput: Record<string, unknown>;
-        try {
-          toolInput = JSON.parse(toolCall.function.arguments);
-        } catch {
-          allSteps.push(`❌ 도구 인자 파싱 실패: ${toolCall.function.name}`);
-          openaiMessages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: "Invalid arguments" }),
-          });
-          continue;
-        }
-        const { result, steps, chartData, extraCharts } = executeTool(
-          toolCall.function.name,
-          toolInput
-        );
-        if (toolCall.function.name === "compare_etfs") {
-          const tickers = toolInput.tickers as unknown;
-          if (Array.isArray(tickers) && tickers.length >= 2) {
-            lastCompareTickers = tickers.filter((t): t is string => typeof t === "string");
-          }
-        }
-        allSteps.push(...steps);
-        if (chartData) allCharts.push(chartData);
-        if (extraCharts) allCharts.push(...extraCharts);
-
-        openaiMessages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(result),
-        });
-      }
-    } else {
-      // 최종 텍스트 응답
-      finalResponse = message.content || "";
-      break;
-    }
-  }
+  const response = await openai.chat.completions.create({
+    model: selectedModel,
+    max_tokens: 1500,
+    messages: openaiMessages,
+  });
+  finalResponse = response.choices[0]?.message?.content || "";
 
   // === 투자 시점 질문 거절 멘트 강제 삽입 (항상) ===
   if (isTimingQuestion) {

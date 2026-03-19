@@ -146,13 +146,13 @@ export default function MyPage() {
               <h2 className={`text-xl font-bold ${type.color}`}>{type.type}</h2>
               <p className="text-xs text-gray-500 mt-0.5">위험 등급 {type.riskLevel}/6 | 총점 {savedResult.totalScore}/25</p>
             </div>
-            <Link
-              href="/quiz"
+            <a
+              href="/quiz?reset=1"
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               다시 분석
-            </Link>
+            </a>
           </div>
 
           {/* 위험 등급 바 */}
@@ -309,13 +309,13 @@ export default function MyPage() {
 
         {/* 하단 버튼 */}
         <div className="flex gap-3">
-          <Link
-            href="/quiz"
+          <a
+            href="/quiz?reset=1"
             className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
           >
             <RotateCcw className="w-4 h-4" />
             다시 분석하기
-          </Link>
+          </a>
           <Link
             href="/"
             className="flex-1 py-3 rounded-xl bg-[#1428a0] text-white font-medium hover:bg-[#0f1f7a] transition-colors flex items-center justify-center gap-2"

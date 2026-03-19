@@ -256,8 +256,14 @@ export default function QuizPage() {
   const [showSaved, setShowSaved] = useState(false);
   // totalScore is tracked via state setter, used in getInvestorType
 
-  // 저장된 결과 로드
+  // 저장된 결과 로드 (reset=1이면 초기화 후 설문 시작)
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reset") === "1") {
+      localStorage.removeItem(STORAGE_KEY);
+      window.history.replaceState({}, "", "/quiz");
+      return;
+    }
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {

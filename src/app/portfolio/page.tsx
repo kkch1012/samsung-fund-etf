@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Brain, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -118,16 +118,12 @@ const PRESET_PORTFOLIOS: PresetPortfolio[] = [
 
 const STORAGE_KEY = "kodex-quiz-result";
 
-export default function PortfolioPage() {
-  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(PRESET_PORTFOLIOS);
-  const [selectedPreset, setSelectedPreset] = useState(2);
-  const [investAmount, setInvestAmount] = useState(1000);
-  const [weights, setWeights] = useState<number[]>(PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight));
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+function getInitialPortfolioState() {
+  let presets = PRESET_PORTFOLIOS;
+  let selectedIdx = 2; // 균형 추구형 기본
+  let initialWeights = PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight);
 
-  // localStorage에서 AI 포트폴리오 로드 (hydration mismatch 방지)
-  useEffect(() => {
+  if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -139,15 +135,27 @@ export default function PortfolioPage() {
             isAI: true,
             etfs: parsed.aiPortfolio,
           };
-          setAllPresets([aiPreset, ...PRESET_PORTFOLIOS]);
-          setSelectedPreset(0);
-          setWeights(parsed.aiPortfolio.map((e: ETFAllocation) => e.weight));
+          presets = [aiPreset, ...PRESET_PORTFOLIOS];
+          selectedIdx = 0;
+          initialWeights = parsed.aiPortfolio.map((e: ETFAllocation) => e.weight);
         }
       }
     } catch {
       // ignore
     }
-  }, []);
+  }
+
+  return { presets, selectedIdx, initialWeights };
+}
+
+export default function PortfolioPage() {
+  const [initial] = useState(getInitialPortfolioState);
+  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(initial.presets);
+  const [selectedPreset, setSelectedPreset] = useState(initial.selectedIdx);
+  const [investAmount, setInvestAmount] = useState(1000);
+  const [weights, setWeights] = useState<number[]>(initial.initialWeights);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const portfolio = allPresets[selectedPreset];
 
@@ -157,10 +165,13 @@ export default function PortfolioPage() {
     setAiAnalysis(null);
 
     const holdings = portfolio.etfs
-      .map((etf, i) => `${etf.name}(${etf.ticker}) ${weights[i]}%`)
-      .join(", ");
+      .map((etf, i) => `${etf.name}(${etf.ticker}) ${weights[i]}%, 1Y수익률 ${etf.return1Y}%, 보수 ${etf.fee}%, MDD ${etf.mdd}%`)
+      .join("\n");
 
-    const prompt = `나는 투자금 ${investAmount}만원으로 다음 KODEX ETF 포트폴리오를 갖고 있어: ${holdings}. 이 포트폴리오를 진단해줘.`;
+    const prompt = `아래 포트폴리오(투자금 ${investAmount}만원)를 분석해줘. 도구 호출 없이 아래 데이터만으로 답변해:
+${holdings}
+
+분석 형식: 1️⃣ 종합 평가 2~3문장 → 2️⃣ 분산 진단(지역🟢🟡🔴, 섹터🟢🟡🔴, 자산군🟢🟡🔴) → 3️⃣ 리밸런싱 제안(비중% 예시). 500자 이내.`;
 
     try {
       const res = await fetch("/api/chat", {

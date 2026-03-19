@@ -372,6 +372,29 @@ const MODEL_MAP: Record<string, string> = {
   haiku: "anthropic/claude-3.5-haiku",
 };
 
+// 투자 시점/매수 판단 질문 감지
+function isInvestmentTimingQuestion(message: string): boolean {
+  const m = message.toLowerCase();
+  const patterns = [
+    "사야 해", "사야해", "사야 할까", "사야할까", "사야 하나",
+    "매수해야", "매도해야", "팔아야",
+    "들어가도 돼", "들어가도 될까", "들어가도 되나",
+    "지금 사도", "지금 살까", "지금 매수",
+    "투자해도", "투자할까", "투자해야",
+    "말아야", "팔까",
+    "올라갈까", "내려갈까", "오를까", "떨어질까",
+  ];
+  return patterns.some(p => m.includes(p));
+}
+
+const TIMING_REJECTION_PREFIX = `🚫 **투자 시점 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다.**
+
+대신 판단에 도움이 될 **객관적인 데이터**를 제공해 드리겠습니다.
+
+---
+
+`;
+
 export async function POST(request: NextRequest) {
   const { messages, conversationHistory, model: requestedModel } = (await request.json()) as {
     messages: ChatMessage[];
@@ -386,6 +409,9 @@ export async function POST(request: NextRequest) {
   // 1. 에이전트 라우팅
   const agentType: AgentType = classifyIntent(userMessage);
   const agent = AGENTS[agentType];
+
+  // 투자 시점 판단 질문 감지
+  const isTimingQuestion = isInvestmentTimingQuestion(userMessage);
 
   // 에이전트가 사용할 도구 필터링
   const agentTools = ETF_TOOLS.filter((t) =>
@@ -409,8 +435,17 @@ export async function POST(request: NextRequest) {
   );
   allSteps.push(`🔧 모델: ${modelLabel}`);
 
+  // 투자 시점 질문일 경우 추가 가드레일 시스템 메시지 삽입
+  const timingGuardrailMessage = isTimingQuestion
+    ? `\n\n[최우선 지시] 사용자가 투자 시점/매수/매도 판단을 요청하고 있습니다. 반드시 응답 첫 문장에서 "투자 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다." 라고 명확히 거절한 후, "대신 판단에 도움이 될 객관적인 데이터를 제공해 드리겠습니다."로 전환하세요. 절대 "사세요", "좋은 시점입니다", "들어가셔도 됩니다" 같은 표현을 사용하지 마세요.`
+    : "";
+
+  if (isTimingQuestion) {
+    allSteps.push("🛡️ 투자 시점 판단 질문 감지 → 거절 가드레일 활성화");
+  }
+
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: agent.systemPrompt },
+    { role: "system", content: agent.systemPrompt + timingGuardrailMessage },
     ...history,
     { role: "user", content: userMessage },
   ];
@@ -474,6 +509,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // === 투자 시점 질문 거절 멘트 강제 삽입 (모델이 거절 멘트를 생략한 경우) ===
+  if (isTimingQuestion) {
+    const hasRejection = finalResponse.includes("드리기 어렵습니다") ||
+      finalResponse.includes("권유는 어렵") ||
+      finalResponse.includes("판단을 드리기") ||
+      finalResponse.includes("매수/매도 권유") ||
+      finalResponse.includes("투자자 본인의 결정") ||
+      finalResponse.includes("투자 판단은");
+
+    if (!hasRejection) {
+      finalResponse = TIMING_REJECTION_PREFIX + finalResponse;
+      allSteps.push("🛡️ 거절 가드레일 → 모델 응답에 거절 멘트 누락 감지 → 자동 삽입");
+    } else {
+      allSteps.push("✅ 거절 가드레일 → 모델 응답에 거절 멘트 포함 확인");
+    }
+  }
+
   // === 자가 교정 단계 표시 (Self-Correction) ===
   if (toolCallCount > 0) {
     allSteps.push("🔄 Self-Correction [쿼리 품질 검증] 검색 결과 충분성 확인");
@@ -496,3 +548,4 @@ export async function POST(request: NextRequest) {
     charts: allCharts.length > 0 ? allCharts : undefined,
   });
 }
+

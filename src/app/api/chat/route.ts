@@ -584,6 +584,15 @@ function needsMarketScopeClarification(message: string): boolean {
   // 투자 시장을 이미 명시한 질문은 되묻지 않음
   if (hasMarketScope(m)) return false;
 
+  // 구체적 KODEX 종목명이나 6자리 티커가 있으면 이미 특정된 질문 → 되묻지 않음
+  if (/kodex\s+\S/i.test(message)) return false;
+  if (/\b\d{6}\b/.test(message)) return false;
+  // "투자설명서", "search_documents" 등 도구/문서 관련 후속 쿼리
+  if (m.includes("투자설명서") || m.includes("search_") || m.includes("운용보고서")) return false;
+
+  // 투자 시점 판단 질문은 슬롯 필링이 아닌 거절 가드레일로 처리해야 함
+  if (isInvestmentTimingQuestion(message)) return false;
+
   // 너무 짧은 답변(예: "국내, 수익률 기준")은 슬롯 필링 후속일 가능성이 높으므로 제외
   if (m.length <= 12) return false;
 
@@ -634,9 +643,9 @@ ETF 상품 정보, 수익률 분석, 투자 상담 등 **ETF 관련 질문**에 
 2. 안정적인 배당 ETF를 추천해주세요
 3. S&P500 ETF와 나스닥100 ETF를 비교해주세요`;
 
-const TIMING_REJECTION_PREFIX = `🚫 **투자 시점 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다.**
+const TIMING_REJECTION_PREFIX = `🚫 **투자 시점 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다.** (금융소비자보호법)
 
-대신 판단에 도움이 될 **객관적인 데이터**를 제공해 드리겠습니다.
+대신 판단에 도움이 될 **객관적인 수익률 데이터**를 제공해 드리겠습니다.
 
 ---
 
@@ -726,9 +735,34 @@ export async function POST(request: NextRequest) {
   // 시나리오별 추가 시스템 메시지 구성
   let additionalSystemMessage = "";
 
+  // 비교 요청 시 종목명 정확성 강제
+  if (userMessage.includes("비교") || userMessage.includes("이랑") || userMessage.includes("vs")) {
+    additionalSystemMessage += `\n\n[종목 정확성 — 최우선] 사용자가 명시한 종목명을 절대 다른 종목으로 바꾸지 마세요. "A이랑 B 비교해줘"라면 반드시 A와 B를 각각 search_etf_products로 검색하세요. 예: "KODEX 미국S&P500"이라 했으면 "미국S&P500"으로 검색해야 하며, "나스닥100"으로 대체하는 것은 금지입니다.`;
+  }
+
   // 투자 시점 질문일 경우 거절 가드레일
   if (isTimingQuestion) {
-    additionalSystemMessage += `\n\n[최우선 지시] 사용자가 투자 시점/매수/매도 판단을 요청하고 있습니다. 반드시 응답 첫 문장에서 "투자 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다." 라고 명확히 거절한 후, "대신 판단에 도움이 될 객관적인 데이터를 제공해 드리겠습니다."로 전환하세요. 절대 "사세요", "좋은 시점입니다", "들어가셔도 됩니다" 같은 표현을 사용하지 마세요. 거절 후 MCP 도구를 사용하여 해당 ETF의 수익률, 시장 동향, 뉴스 등 객관적 데이터를 제공하세요.`;
+    additionalSystemMessage += `\n\n[최우선 지시 — 매매 권유 거절 + 객관 데이터 제공]
+사용자가 "사야 해?", "팔아야 해?", "말아야 해?" 등 투자 시점/매수/매도 판단을 요청하고 있습니다.
+
+**Step 1 — 거절 (필수, 응답 첫 줄):**
+"🚫 투자 시점 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다. (금융소비자보호법)"
+
+**Step 2 — 전환 (필수):**
+"대신 판단에 도움이 될 **객관적인 수익률 데이터**를 제공해 드리겠습니다."
+
+**Step 3 — 반드시 MCP 도구 호출로 데이터 제공:**
+1. search_etf_products로 사용자가 언급한 ETF 검색
+2. get_etf_detail로 상세 정보 조회
+3. get_etf_performance로 수익률 + 가격 히스토리 조회 (차트 자동 생성)
+4. search_news로 관련 뉴스 확인
+
+**Step 4 — 응답 형식:**
+- 수익률 테이블 (1M/3M/6M/1Y)
+- 위 도구 결과의 차트가 자동 표시됨을 안내
+- 마지막에 "⚠️ 과거 수익률이 미래 수익을 보장하지 않습니다. 투자 판단은 투자자 본인의 책임입니다."
+
+절대 "사세요", "좋은 시점입니다", "들어가셔도 됩니다" 같은 표현을 사용하지 마세요.`;
     allSteps.push("🛡️ 투자 시점 판단 질문 감지 → 거절 가드레일 활성화");
   }
 
@@ -803,15 +837,19 @@ export async function POST(request: NextRequest) {
   const openai = getOpenAI();
   let finalResponse = "";
   let toolCallCount = 0;
-  const maxToolCalls = 15;
+  const maxToolCalls = 10;
   const allCharts: ChartData[] = [];
   let lastCompareTickers: string[] | null = null;
+  let loopRound = 0;
 
   // Tool use loop
   while (toolCallCount < maxToolCalls) {
+    loopRound++;
+    // 도구 호출 라운드는 작은 max_tokens로 빠르게, 마지막(최종 텍스트)은 크게
+    const isLikelyFinalRound = loopRound > 1 && toolCallCount >= 2;
     const response = await openai.chat.completions.create({
       model: selectedModel,
-      max_tokens: 8192,
+      max_tokens: isLikelyFinalRound ? 4096 : 1024,
       tools: openaiTools,
       messages: openaiMessages,
     });

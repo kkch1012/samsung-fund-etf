@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Loader2, RotateCcw, LayoutDashboard, Settings, ImagePlus, X, ClipboardList, PieChart, Newspaper, UserCircle, Zap, Brain, Eye, EyeOff } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
-import precachedData from "@/lib/precached-responses.json";
 
 interface ChartDataItem {
   type: "performance" | "compare" | "returns" | "radar";
@@ -31,14 +30,17 @@ interface Message {
 
 const LOADING_STEPS = [
   { text: "🤖 에이전트 라우팅 중...", delay: 0 },
-  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 500 },
-  { text: "🔍 MCP Server 연결 중...", delay: 1000 },
-  { text: "📡 도구 호출 요청 전송...", delay: 1500 },
-  { text: "⚙️ MCP 도구 실행 중...", delay: 2200 },
-  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 3000 },
-  { text: "📄 RAG 벡터 검색 수행 중...", delay: 4000 },
-  { text: "📊 응답 데이터 구성 중...", delay: 5500 },
-  { text: "✍️ 최종 응답 생성 중...", delay: 7000 },
+  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 400 },
+  { text: "🔍 MCP Server 연결 중...", delay: 800 },
+  { text: "📡 도구 호출 요청 전송...", delay: 1200 },
+  { text: "⚙️ MCP 도구 실행 중...", delay: 1800 },
+  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 2500 },
+  { text: "📄 RAG 벡터 검색 수행 중...", delay: 3500 },
+  { text: "📊 응답 데이터 구성 중...", delay: 5000 },
+  { text: "🛡️ 컴플라이언스 검증 중...", delay: 7000 },
+  { text: "✍️ 최종 응답 생성 중...", delay: 9000 },
+  { text: "📝 마크다운 포맷팅 중...", delay: 12000 },
+  { text: "✅ 거의 완료되었습니다...", delay: 16000 },
 ];
 
 const IMAGE_LOADING_STEPS = [
@@ -50,21 +52,6 @@ const IMAGE_LOADING_STEPS = [
   { text: "✍️ 분석 결과 생성 중...", delay: 5500 },
 ];
 
-// 프리캐시용 짧은 로딩 (2초)
-const PRECACHE_LOADING_STEPS = [
-  { text: "🤖 에이전트 라우팅 중...", delay: 0 },
-  { text: "🧠 의도 분류 완료 → 전문 에이전트 선택", delay: 250 },
-  { text: "🔍 MCP Server 연결 중...", delay: 500 },
-  { text: "📡 도구 호출 요청 전송...", delay: 750 },
-  { text: "⚙️ MCP 도구 실행 중...", delay: 1000 },
-  { text: "🗃️ ETF 데이터베이스 조회 중...", delay: 1250 },
-  { text: "📄 RAG 벡터 검색 수행 중...", delay: 1500 },
-  { text: "📊 응답 데이터 구성 중...", delay: 1750 },
-  { text: "✍️ 최종 응답 생성 중...", delay: 2000 },
-];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const precached = precachedData as Record<string, any>;
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -214,44 +201,15 @@ export default function Home() {
     setLoading(true);
     setLoadingSteps([]);
 
-    // 프리캐시 확인
-    const cached = precached[messageText];
-    const isPrecached = cached && cached.response && cached.response.length > 0;
-    const steps = isPrecached ? PRECACHE_LOADING_STEPS : LOADING_STEPS;
-
     // 로딩 스텝 타이머
-    const newTimers = steps.map((step) =>
+    const newTimers = LOADING_STEPS.map((step) =>
       setTimeout(() => {
         setLoadingSteps((prev) => [...prev, step.text]);
       }, step.delay)
     );
     timersRef.current = newTimers;
 
-    if (isPrecached) {
-      // 프리캐시 응답: 2.5초 후 표시
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-
-      const msgId = (Date.now() + 1).toString();
-      const assistantMsg: Message = {
-        id: msgId,
-        role: "assistant",
-        content: cached.response,
-        agent: cached.agent,
-        steps: cached.steps,
-        toolCallCount: cached.toolCallCount,
-        charts: cached.charts,
-        suggestedActions: cached.suggestedActions,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      setTypingMessageId(msgId);
-      timersRef.current.forEach(clearTimeout);
-      timersRef.current = [];
-      setLoading(false);
-      setLoadingSteps([]);
-      return;
-    }
-
-    // 실제 API 호출
+    // API 호출
     try {
       const conversationHistory = messages.map((m) => ({
         role: m.role,
@@ -435,7 +393,7 @@ export default function Home() {
                     <Loader2 className="w-4 h-4 text-white animate-spin" />
                   </div>
                   <div className="space-y-2">
-                    {loadingSteps.length > 0 && (
+                    {showProcessSteps && loadingSteps.length > 0 && (
                       <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 space-y-1">
                         {loadingSteps.map((step, i) => (
                           <div
@@ -548,6 +506,7 @@ export default function Home() {
               {/* 모델 선택 */}
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
                 <button
+                  type="button"
                   onClick={() => setSelectedModel("sonnet")}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "sonnet"
                     ? "bg-white text-blue-700 shadow-sm border border-blue-200"
@@ -558,6 +517,7 @@ export default function Home() {
                   Sonnet
                 </button>
                 <button
+                  type="button"
                   onClick={() => setSelectedModel("haiku")}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${selectedModel === "haiku"
                     ? "bg-white text-amber-700 shadow-sm border border-amber-200"
@@ -570,8 +530,9 @@ export default function Home() {
               </div>
               {/* AI 처리과정 토글 */}
               <button
-                onClick={() => setShowProcessSteps(!showProcessSteps)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${showProcessSteps
+                type="button"
+                onClick={() => setShowProcessSteps((prev) => !prev)}
+                className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all border ${showProcessSteps
                     ? "bg-white text-green-700 border-green-200 shadow-sm"
                     : "bg-gray-100 text-gray-400 border-transparent hover:text-gray-600"
                   }`}

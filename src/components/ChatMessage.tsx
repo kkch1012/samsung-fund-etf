@@ -400,11 +400,13 @@ export default function ChatMessage({
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                 {agent.name}
               </span>
-              {toolCallCount !== undefined && toolCallCount > 0 && (
-                <span className="text-xs text-gray-400">
-                  도구 {toolCallCount}회 호출
-                </span>
-              )}
+              {showProcessSteps &&
+                toolCallCount !== undefined &&
+                toolCallCount > 0 && (
+                  <span className="text-xs text-gray-400">
+                    도구 {toolCallCount}회 호출
+                  </span>
+                )}
             </div>
           )}
 
@@ -412,6 +414,7 @@ export default function ChatMessage({
           {showProcessSteps && parsedSteps.length > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
               <button
+                type="button"
                 onClick={() => setShowSteps(!showSteps)}
                 className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors"
               >

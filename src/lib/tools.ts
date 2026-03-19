@@ -157,7 +157,7 @@ export const ETF_TOOLS: ToolDefinition[] = [
   {
     name: "find_kodex_alternative",
     description:
-      "경쟁사 ETF(TIGER, ACE, RISE, SOL 등) 이름을 입력하면 동일/유사한 KODEX ETF 대안을 찾아줍니다. 경쟁사 ETF를 언급하거나 '대신', '대안', '대체' 키워드가 있으면 반드시 호출하세요.",
+      "경쟁사 ETF(TIGER, ACE, RISE, SOL 등) 이름을 입력하면 동일/유사 테마의 KODEX ETF **상위 3개** 대안을 반환합니다. '갈아탈', 'KODEX로', '대신', '대안' 등이 있으면 **반드시** 이 도구를 호출하세요. 응답에는 경쟁사 vs KODEX 대안 **레이더 차트**가 함께 제공됩니다.",
     input_schema: {
       type: "object" as const,
       properties: {

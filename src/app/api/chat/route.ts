@@ -30,6 +30,32 @@ interface ChartData {
   data: Record<string, unknown>;
 }
 
+/** 레이더 차트 5축 (compare_etfs / 경쟁사 전환 공통) */
+function buildRadarAxisRow(
+  name: string,
+  r: { return1Y: number; mdd: number; fee: number; aum: number; return3M: number }
+) {
+  return {
+    name,
+    수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
+    안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
+    수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
+    규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
+    성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
+  };
+}
+
+/** DB에 없는 경쟁사 ETF — 동일 테마 KODEX 1위를 벤치로 한 시연용 추정 프로파일 */
+function buildCompetitorRadarRow(competitorDisplayName: string, peer: ETFProduct) {
+  return buildRadarAxisRow(`${competitorDisplayName} (경쟁사·추정)`, {
+    return1Y: peer.return1Y * 0.985,
+    mdd: peer.mdd === 0 ? -12 : peer.mdd * 1.06,
+    fee: Math.min(peer.fee + 0.07, 2.5),
+    aum: Math.max(1, peer.aum * 0.85),
+    return3M: peer.return3M * 0.96,
+  });
+}
+
 // Anthropic tool format → OpenAI function format 변환
 function convertToolsToOpenAI(tools: typeof ETF_TOOLS) {
   return tools.map((tool) => ({
@@ -112,6 +138,29 @@ function applyGuardrails(
   }
 
   return { filtered, guardrailSteps };
+}
+
+/** ETF 비교 응답 후 시연용 '다음 단계' 버튼 */
+function buildCompareSuggestedActions(tickers: string[]): { label: string; query: string }[] | undefined {
+  const cleaned = [...new Set(tickers.filter((t) => typeof t === "string" && t.trim()))].slice(0, 8);
+  if (cleaned.length < 2) return undefined;
+  const details = cleaned.map((t) => ({
+    ticker: t,
+    name: getETFDetail(t)?.name || t,
+  }));
+  const docPair = details.slice(0, 2);
+  const docStr = docPair.map((d) => `${d.name}(${d.ticker})`).join("과 ");
+  const anchor = details[0];
+  return [
+    {
+      label: "투자설명서 비교",
+      query: `${docStr}의 투자설명서를 search_documents로 각각 조회한 뒤, 보수·추종지수·주요 투자위험·유동성을 표로 비교해줘.`,
+    },
+    {
+      label: "유사 ETF 더보기",
+      query: `${anchor.name}(${anchor.ticker})와 유사한 KODEX ETF를 search_etf_products로 더 찾아 상위 5개를 수익률·보수·AUM과 함께 알려줘.`,
+    },
+  ];
 }
 
 // 도구 실행
@@ -367,24 +416,28 @@ function executeTool(
       steps.push(`🔄 MCP Server [경쟁사 대안] "${competitorName}" → KODEX 대체 상품 검색`);
       const result = findKodexAlternative(competitorName);
       if (result && result.alternatives.length > 0) {
-        steps.push(`✅ ${result.brand} 상품 → KODEX 대안 ${result.alternatives.length}개 매칭`);
-        const radarEtfs = result.alternatives.slice(0, 3);
-        // 레이더 차트
-        const radarChart: ChartData | undefined = radarEtfs.length >= 2 ? {
+        steps.push(`✅ ${result.brand} 상품 → KODEX 대안 ${result.alternatives.length}개 매칭 (시연: 상위 3종)`);
+        const top3 = result.alternatives.slice(0, 3);
+        const peer = top3[0];
+        const competitorRow = buildCompetitorRadarRow(result.competitor, peer);
+        const kodexRows = top3.map((r) =>
+          buildRadarAxisRow(r.name, {
+            return1Y: r.return1Y,
+            mdd: r.mdd,
+            fee: r.fee,
+            aum: r.aum,
+            return3M: r.return3M,
+          })
+        );
+        // 레이더: 경쟁사(추정) + KODEX 대안 3종
+        const radarChart: ChartData = {
           type: "radar" as const,
           data: {
-            etfs: radarEtfs.map((r) => ({
-              name: r.name,
-              수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
-              안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
-              수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
-              규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
-              성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
-            })),
+            etfs: [competitorRow, ...kodexRows],
           },
-        } : undefined;
+        };
         // 각 대안 ETF의 개별 가격 차트 생성
-        const perfCharts: ChartData[] = radarEtfs.map((r) => {
+        const perfCharts: ChartData[] = top3.map((r) => {
           const detail = getETFDetail(r.ticker);
           return {
             type: "performance" as const,
@@ -395,10 +448,9 @@ function executeTool(
             },
           };
         });
-        steps.push(`📊 대안 ${radarEtfs.length}개 종목 가격 차트 생성 완료`);
-        const allExtraCharts: ChartData[] = [];
-        if (radarChart) allExtraCharts.push(radarChart);
-        allExtraCharts.push(...perfCharts);
+        steps.push(`📊 경쟁사 vs KODEX 대안 레이더 차트 생성 (4시리즈)`);
+        steps.push(`📈 KODEX 대안 ${top3.length}개 종목 가격 차트 생성 완료`);
+        const allExtraCharts: ChartData[] = [radarChart, ...perfCharts];
         return {
           result: {
             competitor: result.competitor,
@@ -434,6 +486,30 @@ const MODEL_MAP: Record<string, string> = {
   sonnet: "anthropic/claude-sonnet-4",
   haiku: "anthropic/claude-3.5-haiku",
 };
+
+/** 경쟁사 → KODEX 전환 시연 (TIGER/ACE 등 + 갈아타기 등) */
+function isCompetitorSwitchMessage(message: string): boolean {
+  const m = message.toLowerCase();
+  if (
+    (m.includes("갈아탈") || m.includes("갈아타") || m.includes("전환")) &&
+    (m.includes("kodex") || m.includes("코덱스"))
+  ) {
+    return true;
+  }
+  if ((m.includes("대신") || m.includes("대안")) && (m.includes("kodex") || m.includes("코덱스"))) {
+    return true;
+  }
+  return (
+    m.includes("tiger") ||
+    m.includes("타이거") ||
+    m.includes("ace ") ||
+    m.includes("rise ") ||
+    m.includes("sol ") ||
+    m.includes("arirang") ||
+    m.includes("hanaro") ||
+    m.includes("kbstar")
+  );
+}
 
 // 투자 시점/매수 판단 질문 감지
 function isInvestmentTimingQuestion(message: string): boolean {
@@ -476,6 +552,74 @@ function isETFRelatedQuestion(message: string): boolean {
     "mdd", "샤프비율", "변동성",
   ];
   return etfKeywords.some(k => m.includes(k));
+}
+
+function hasMarketScope(message: string): boolean {
+  const m = message.toLowerCase();
+  const scopeKeywords = [
+    "국내",
+    "한국",
+    "코스피",
+    "코스닥",
+    "미국",
+    "해외",
+    "글로벌",
+    "s&p",
+    "나스닥",
+    "nasdaq",
+    "다우",
+    "선진국",
+    "신흥국",
+    "일본",
+    "중국",
+    "유럽",
+    "아시아",
+  ];
+  return scopeKeywords.some((k) => m.includes(k));
+}
+
+function needsMarketScopeClarification(message: string): boolean {
+  const m = message.toLowerCase();
+
+  // 투자 시장을 이미 명시한 질문은 되묻지 않음
+  if (hasMarketScope(m)) return false;
+
+  // 너무 짧은 답변(예: "국내, 수익률 기준")은 슬롯 필링 후속일 가능성이 높으므로 제외
+  if (m.length <= 12) return false;
+
+  const sectorKeywords = [
+    "반도체",
+    "2차전지",
+    "배터리",
+    "ai",
+    "인공지능",
+    "바이오",
+    "헬스케어",
+    "로봇",
+    "전력",
+    "방산",
+    "반려",
+    "클라우드",
+  ];
+
+  const askIntentKeywords = [
+    "뭐가 좋",
+    "추천",
+    "알려줘",
+    "찾아줘",
+    "검색",
+    "비교",
+    "어떤",
+    "있어",
+    "괜찮",
+    "유망",
+    "수익률 기준",
+  ];
+
+  const hasSector = sectorKeywords.some((k) => m.includes(k));
+  const hasAskIntent = askIntentKeywords.some((k) => m.includes(k)) || m.includes("?");
+
+  return hasSector && hasAskIntent;
 }
 
 // 도메인 외 질문에 대한 거절 응답
@@ -527,6 +671,35 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const history = (conversationHistory || []).slice(-10).map((m: ChatMessage) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+
+  // === 가드레일 1.5: 시장 범위(국내/미국) 슬롯 필링 강제 ===
+  // 섹터형 질문이 애매하면 도구 호출 전에 반드시 되묻는다.
+  const lastAssistantMsg = [...history].reverse().find((m) => m.role === "assistant");
+  const askedMarketScopeBefore = !!lastAssistantMsg && (
+    lastAssistantMsg.content.includes("국내 ETF인가요, 미국 ETF인가요") ||
+    lastAssistantMsg.content.includes("국내 ETF를 찾으시나요, 미국 ETF를 찾으시나요")
+  );
+
+  if (!askedMarketScopeBefore && needsMarketScopeClarification(userMessage)) {
+    return Response.json({
+      response: `좋은 질문입니다. 더 정확히 찾기 위해 한 가지만 여쭤볼게요.\n\n1️⃣ **국내 ETF**를 찾으시나요, **미국 ETF**를 찾으시나요?\n2️⃣ 그리고 기준은 **수익률 / 변동성 / 보수(수수료) / 순자산(AUM)** 중 무엇이 중요하신가요?\n\n예: "국내, 수익률 기준"`,
+      agent: {
+        type: "consultant",
+        name: "상담 에이전트",
+      },
+      steps: [
+        "🤖 에이전트 라우팅 → 상담 에이전트 (애매한 질의 슬롯 필링)",
+        "🎯 시장 범위 슬롯 확인 필요 → 국내/미국 되묻기",
+        "⏸️ 도구 호출 대기 (사용자 추가 조건 입력 필요)",
+      ],
+      toolCallCount: 0,
+    });
+  }
+
   // 1. 에이전트 라우팅
   const agentType: AgentType = classifyIntent(userMessage);
   const agent = AGENTS[agentType];
@@ -541,12 +714,6 @@ export async function POST(request: NextRequest) {
 
   // OpenAI function format으로 변환
   const openaiTools = agentTools.length > 0 ? convertToolsToOpenAI(agentTools) : undefined;
-
-  // 2. 대화 히스토리 구성 (슬롯 필링 2차 응답을 위해 충분히 전달)
-  const history = (conversationHistory || []).slice(-10).map((m: ChatMessage) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
 
   // 3. OpenRouter API 호출
   const allSteps: string[] = [];
@@ -580,17 +747,51 @@ export async function POST(request: NextRequest) {
   }
 
   // 포트폴리오 진단 시나리오 감지
-  const isPortfolioDiagnosis = userMessage.includes("갖고 있") || userMessage.includes("보유") || userMessage.includes("내 포트폴리오");
+  const um = userMessage.toLowerCase();
+  const isPortfolioDiagnosis =
+    userMessage.includes("갖고 있") ||
+    userMessage.includes("갖고있") ||
+    userMessage.includes("가지고 있") ||
+    userMessage.includes("들고 있") ||
+    userMessage.includes("보유") ||
+    userMessage.includes("내 포트폴리오") ||
+    um.includes("리밸런싱") ||
+    um.includes("리밸런스") ||
+    userMessage.includes("분산 진단") ||
+    userMessage.includes("포트폴리오 진단");
   if (isPortfolioDiagnosis) {
-    additionalSystemMessage += `\n\n[포트폴리오 진단 모드] 사용자가 보유 종목을 언급했습니다. 반드시 아래 순서로 도구를 호출하세요:
+    additionalSystemMessage += `\n\n[포트폴리오 진단 모드 — 시연 스펙 필수] 사용자가 보유/포트폴리오를 언급했습니다. 반드시 아래 순서로 도구를 호출하세요:
 1. search_etf_products로 각 종목 검색
 2. get_etf_detail로 각 종목 상세 조회
 3. get_etf_performance로 각 종목 수익률+가격 데이터 조회
 4. compare_etfs로 전체 비교
-5. recommend_etf로 부족한 영역 보완 ETF 추천
+5. search_news로 관련 시장 키워드 검색
+6. recommend_etf로 부족한 영역(채권/해외/테마) 보완용 ETF 후보 도출
 
-응답 형식은 반드시: 1️⃣보유종목현황(테이블) → 2️⃣상관관계분석 → 3️⃣분산효과진단(🟢🟡🔴) → 4️⃣리밸런싱제안 순서로 작성하세요. 이 응답은 1200자까지 길게 작성해도 됩니다.`;
+**응답에 반드시 네 개 섹션 제목을 모두 쓰고 내용을 채우세요 (생략 금지):**
+1️⃣ **보유 종목 현황** — 테이블(종목명, 티커, 카테고리, 1년 수익률, 보수, MDD)
+2️⃣ **상관관계·편중 분석** — 국내/해외, 섹터, 자산군(주식·채권 등) 관점에서 2~4문장
+3️⃣ **분산 효과 진단** — 아래 세 줄을 **반드시** 각각 한 줄로 작성 (이모지 + 짧은 근거):
+   - 지역 분산: 🟢 또는 🟡 또는 🔴 + 한 줄 설명
+   - 섹터/테마 분산: 🟢 또는 🟡 또는 🔴 + 한 줄 설명
+   - 자산군 분산: 🟢 또는 🟡 또는 🔴 + 한 줄 설명
+4️⃣ **리밸런싱 제안** — **구체적 목표 비중(%) 범위**를 제시 (예: 국내 주식 35~45%, 해외 주식 40~50%, 채권/현금성 10~20%). "지금 매도/매수하세요" 같은 **지시는 금지**이며, 반드시 "참고용 예시 비중"임을 명시하세요. recommend_etf 결과와 연결해 1~2개 KODEX 상품을 **보완 후보**로만 제안하세요.
+
+이 모드에서는 **최대 1800자**까지 허용됩니다. 체크박스([ ]) 형식은 사용하지 마세요.`;
     allSteps.push("📋 포트폴리오 진단 모드 활성화 → 다중 도구 병렬 호출");
+  }
+
+  // 경쟁사 → KODEX 전환 시연
+  if (isCompetitorSwitchMessage(userMessage)) {
+    additionalSystemMessage += `\n\n[경쟁사 전환 시연 모드 — 킬러 기능]
+사용자가 TIGER/ACE 등 경쟁사 ETF에서 KODEX로의 **전환·대안·갈아타기**를 묻고 있습니다.
+1. **반드시** find_kodex_alternative를 호출하세요. (competitor_name에 사용자가 말한 경쟁사 상품명을 그대로 넣기)
+2. 도구 결과의 KODEX 대안 **3종**을 표로 요약하고, 수익률·보수·AUM·MDD를 비교하세요.
+3. 화면에 표시되는 **레이더 차트**(경쟁사 추정 1개 + KODEX 3개)를 본문에서 반드시 언급하고, 5축(수익률·안정성·수수료·규모·성장성) 비교를 2~3문장으로 설명하세요.
+4. 레이더의 "경쟁사·추정" 축은 **시연용 추정 프로파일**임을 한 줄로 고지하세요.
+5. 매수/매도 **권유는 금지**. 정보 비교 및 참고 데이터 제공만 하세요.
+6. 이어서 search_news 또는 search_documents를 추가 호출해 근거를 보강하세요.`;
+    allSteps.push("🔄 경쟁사 전환 시연 모드 → find_kodex_alternative 우선");
   }
 
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
@@ -604,6 +805,7 @@ export async function POST(request: NextRequest) {
   let toolCallCount = 0;
   const maxToolCalls = 15;
   const allCharts: ChartData[] = [];
+  let lastCompareTickers: string[] | null = null;
 
   // Tool use loop
   while (toolCallCount < maxToolCalls) {
@@ -641,6 +843,12 @@ export async function POST(request: NextRequest) {
           toolCall.function.name,
           toolInput
         );
+        if (toolCall.function.name === "compare_etfs") {
+          const tickers = toolInput.tickers as unknown;
+          if (Array.isArray(tickers) && tickers.length >= 2) {
+            lastCompareTickers = tickers.filter((t): t is string => typeof t === "string");
+          }
+        }
         allSteps.push(...steps);
         if (chartData) allCharts.push(chartData);
         if (extraCharts) allCharts.push(...extraCharts);
@@ -686,6 +894,10 @@ export async function POST(request: NextRequest) {
   finalResponse = filtered;
   allSteps.push(...guardrailSteps);
 
+  const suggestedActions = lastCompareTickers
+    ? buildCompareSuggestedActions(lastCompareTickers)
+    : undefined;
+
   return Response.json({
     response: finalResponse,
     agent: {
@@ -695,6 +907,8 @@ export async function POST(request: NextRequest) {
     steps: allSteps,
     toolCallCount,
     charts: allCharts.length > 0 ? allCharts : undefined,
+    suggestedActions:
+      suggestedActions && suggestedActions.length > 0 ? suggestedActions : undefined,
   });
 }
 

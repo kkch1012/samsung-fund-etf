@@ -11,6 +11,11 @@ interface ChartDataItem {
   data: Record<string, unknown>;
 }
 
+interface SuggestedAction {
+  label: string;
+  query: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -19,6 +24,8 @@ interface Message {
   steps?: string[];
   toolCallCount?: number;
   charts?: ChartDataItem[];
+  /** 비교 시연용 다음 단계 버튼 (API 또는 프리캐시) */
+  suggestedActions?: SuggestedAction[];
   imageUrl?: string;
 }
 
@@ -233,6 +240,7 @@ export default function Home() {
         steps: cached.steps,
         toolCallCount: cached.toolCallCount,
         charts: cached.charts,
+        suggestedActions: cached.suggestedActions,
       };
       setMessages((prev) => [...prev, assistantMsg]);
       setTypingMessageId(msgId);
@@ -273,6 +281,7 @@ export default function Home() {
         steps: data.steps,
         toolCallCount: data.toolCallCount,
         charts: data.charts,
+        suggestedActions: data.suggestedActions,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -409,6 +418,7 @@ export default function Home() {
                 steps={msg.steps}
                 toolCallCount={msg.toolCallCount}
                 charts={msg.charts}
+                suggestedActions={msg.suggestedActions}
                 imageUrl={msg.imageUrl}
                 onAskQuestion={(q) => sendMessage(q)}
                 showProcessSteps={showProcessSteps}

@@ -4538,9 +4538,10 @@ export function findKodexAlternative(competitorName: string): { competitor: stri
   );
 
   if (mapping) {
+    // 시연 스펙: 경쟁사 대비 KODEX 대안 **상위 3개** (AUM 기준)
     const alternatives = ETF_DATABASE.filter((etf) =>
       mapping.kodexKeywords.some((kw) => etf.name.toLowerCase().includes(kw.toLowerCase()))
-    ).sort((a, b) => b.aum - a.aum).slice(0, 5);
+    ).sort((a, b) => b.aum - a.aum).slice(0, 3);
 
     return { competitor: mapping.competitor, alternatives, brand: mapping.brand };
   }
@@ -4556,7 +4557,7 @@ export function findKodexAlternative(competitorName: string): { competitor: stri
   const alternatives = ETF_DATABASE.filter((etf) =>
     etf.name.toLowerCase().includes(keyword) ||
     etf.index.toLowerCase().includes(keyword)
-  ).sort((a, b) => b.aum - a.aum).slice(0, 5);
+  ).sort((a, b) => b.aum - a.aum).slice(0, 3);
 
   if (alternatives.length === 0) return null;
 

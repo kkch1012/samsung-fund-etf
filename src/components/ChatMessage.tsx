@@ -16,6 +16,8 @@ import {
   BarChart3,
   MessageSquare,
   MousePointerClick,
+  BookOpen,
+  Layers,
 } from "lucide-react";
 
 const ETFChart = dynamic(() => import("./ETFChart"), { ssr: false });
@@ -162,8 +164,10 @@ function extractSlotFillingOptions(content: string): SlotOption[] {
         const clean = bp.replace(/\*\*/g, "").trim();
         // 키워드 필터: 너무 일반적인 단어 제외
         if (clean.length > 1 && clean.length < 25 && !clean.includes("질문") && !clean.includes("추가")) {
-          // 문맥에 맞는 전체 텍스트 구성
-          const suffix = trimmed.includes("ETF") ? " ETF" : "";
+          // 문맥에 "ETF"가 있어도, 볼드 안에 이미 ETF가 들어 있으면 접미사 중복 금지 (예: 국내 ETF ETF)
+          const alreadyHasEtfWord = /\betf\b/i.test(clean);
+          const suffix =
+            trimmed.includes("ETF") && !alreadyHasEtfWord ? " ETF" : "";
           options.push({
             label: clean + suffix,
             fullText: clean + suffix,
@@ -219,6 +223,36 @@ interface ChartDataItem {
   data: Record<string, unknown>;
 }
 
+export interface SuggestedAction {
+  label: string;
+  query: string;
+}
+
+/** 비교 차트가 있으면 시연용 다음 단계 버튼을 API 없이도 복원 */
+function buildFallbackCompareActionsFromCharts(
+  charts: ChartDataItem[] | undefined
+): SuggestedAction[] {
+  if (!charts?.length) return [];
+  const compare = charts.find((c) => c.type === "compare");
+  const etfs = compare?.data?.etfs as { ticker: string; name: string }[] | undefined;
+  if (!Array.isArray(etfs) || etfs.length < 2) return [];
+  const docStr = etfs
+    .slice(0, 2)
+    .map((e) => `${e.name}(${e.ticker})`)
+    .join("과 ");
+  const anchor = etfs[0];
+  return [
+    {
+      label: "투자설명서 비교",
+      query: `${docStr}의 투자설명서를 search_documents로 각각 조회한 뒤, 보수·추종지수·주요 투자위험·유동성을 표로 비교해줘.`,
+    },
+    {
+      label: "유사 ETF 더보기",
+      query: `${anchor.name}(${anchor.ticker})와 유사한 KODEX ETF를 search_etf_products로 더 찾아 상위 5개를 수익률·보수·AUM과 함께 알려줘.`,
+    },
+  ];
+}
+
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
@@ -226,6 +260,8 @@ interface ChatMessageProps {
   steps?: string[];
   toolCallCount?: number;
   charts?: ChartDataItem[];
+  /** 시연: 비교 직후 '투자설명서 비교' 등 다음 단계 (서버에서 내려줌) */
+  suggestedActions?: SuggestedAction[];
   imageUrl?: string;
   onAskQuestion?: (question: string) => void;
   showProcessSteps?: boolean;
@@ -240,6 +276,7 @@ export default function ChatMessage({
   steps,
   toolCallCount,
   charts,
+  suggestedActions,
   imageUrl,
   onAskQuestion,
   showProcessSteps = true,
@@ -316,6 +353,10 @@ export default function ChatMessage({
   const contentForParsing = typingDone ? content : displayedContent;
   const { mainContent, questions: suggestedQuestions } = extractSuggestedQuestions(contentForParsing);
   const slotOptions = typingDone ? extractSlotFillingOptions(content) : [];
+  const nextBestActions: SuggestedAction[] =
+    suggestedActions && suggestedActions.length > 0
+      ? suggestedActions
+      : buildFallbackCompareActionsFromCharts(charts);
 
   // 선택지 클릭 핸들러
   const handleOptionClick = (option: SlotOption) => {
@@ -466,6 +507,32 @@ export default function ChatMessage({
               {charts.map((chart, i) => (
                 <ETFChart key={i} chart={chart as import("./ETFChart").ChartData} />
               ))}
+            </div>
+          )}
+
+          {/* 시연: 비교 분석 후 다음 단계 (투자설명서 / 유사 ETF) */}
+          {typingDone && nextBestActions.length > 0 && onAskQuestion && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-slate-600 mb-2 tracking-wide">
+                다음 단계
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {nextBestActions.map((action, i) => (
+                  <button
+                    key={`${action.label}-${i}`}
+                    type="button"
+                    onClick={() => onAskQuestion(action.query)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 shadow-sm transition-colors"
+                  >
+                    {i === 0 ? (
+                      <BookOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    )}
+                    {action.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

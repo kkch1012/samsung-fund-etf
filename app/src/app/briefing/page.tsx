@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Calendar, Clock, AlertTriangle } from "lucide-react";
 
 // 시뮬레이션 데이터 (데모용)
@@ -102,9 +103,9 @@ export default function BriefingPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
           <ArrowLeft className="w-4 h-4" />
-        </a>
+        </Link>
         <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
           <span className="text-white font-bold text-xs">K</span>
         </div>

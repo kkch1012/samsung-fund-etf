@@ -7,10 +7,8 @@ import {
   Target,
   Database,
   FileText,
-  Newspaper,
   Bot,
   Shield,
-  Zap,
   ImagePlus,
   ArrowLeftRight,
 } from "lucide-react";
@@ -138,13 +136,12 @@ export default function SuggestedQuestions({ onSelect }: Props) {
           <div key={group.category} className="space-y-2">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-1 flex items-center gap-1.5">
               <span
-                className={`${
-                  group.color === "blue"
+                className={`${group.color === "blue"
                     ? "text-blue-500"
                     : group.color === "green"
                       ? "text-green-500"
                       : "text-purple-500"
-                }`}
+                  }`}
               >
                 {group.icon}
               </span>

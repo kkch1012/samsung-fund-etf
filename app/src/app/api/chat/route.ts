@@ -51,13 +51,18 @@ const FORBIDDEN_PATTERNS = [
   /무조건\s*(수익|오름|상승)/,
   /지금\s*당장\s*(사|매수)/,
   /놓치면\s*후회/,
+  // 직접적 매수/매도 권유 패턴 추가
+  /지금\s*(사세요|매수하세요|파세요|매도하세요)/,
+  /(사세요|파세요|매수하세요|매도하세요|들어가세요)/,
+  /빨리\s*(사|매수|투자)/,
+  /꼭\s*(사|매수|투자)\s*(하세요|해야)/,
 ];
 
 const DISCLAIMER = "\n\n> ⚠️ 본 정보는 투자 참고용이며, 투자 판단은 투자자 본인의 책임입니다. 과거 수익률이 미래 수익을 보장하지 않습니다.";
 
 function applyGuardrails(
   response: string,
-  steps: string[]
+  _steps: string[]
 ): { filtered: string; guardrailSteps: string[] } {
   const guardrailSteps: string[] = [];
   guardrailSteps.push("🛡️ Guardrails [컴플라이언스 검증] 응답 필터링 시작");
@@ -78,6 +83,20 @@ function applyGuardrails(
     guardrailSteps.push(`⚠️ 금칙어 ${violations}건 감지 → 자동 필터링 적용`);
   } else {
     guardrailSteps.push("✅ 금칙어 검사 통과 (0건)");
+  }
+
+  // 투자 권유 거절 검증
+  guardrailSteps.push("🛡️ Guardrails [투자 권유 검증] 매수/매도 권유 여부 확인");
+  const advicePatterns = [/사세요/g, /파세요/g, /매수하세요/g, /매도하세요/g, /들어가세요/g, /빨리\s*사/g];
+  let adviceViolations = 0;
+  for (const p of advicePatterns) {
+    const m = filtered.match(p);
+    if (m) adviceViolations += m.length;
+  }
+  if (adviceViolations > 0) {
+    guardrailSteps.push(`⚠️ 투자 권유 표현 ${adviceViolations}건 감지 → 필터링 적용`);
+  } else {
+    guardrailSteps.push("✅ 투자 권유 표현 없음 확인");
   }
 
   // 할루시네이션 체크: 근거 없는 수치 패턴 경고
@@ -184,33 +203,33 @@ function executeTool(
       steps.push(`📊 비교 차트 데이터 생성 완료`);
       const compareChart: ChartData | undefined = results.length >= 2
         ? {
-            type: "compare" as const,
-            data: {
-              etfs: results.map((r: ETFProduct) => ({
-                ticker: r.ticker,
-                name: r.name,
-                return1M: r.return1M,
-                return3M: r.return3M,
-                return6M: r.return6M,
-                return1Y: r.return1Y,
-              })),
-            },
-          }
+          type: "compare" as const,
+          data: {
+            etfs: results.map((r: ETFProduct) => ({
+              ticker: r.ticker,
+              name: r.name,
+              return1M: r.return1M,
+              return3M: r.return3M,
+              return6M: r.return6M,
+              return1Y: r.return1Y,
+            })),
+          },
+        }
         : undefined;
       const radarChart: ChartData | undefined = results.length >= 2
         ? {
-            type: "radar" as const,
-            data: {
-              etfs: results.slice(0, 4).map((r: ETFProduct) => ({
-                name: r.name,
-                수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
-                안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
-                수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
-                규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
-                성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
-              })),
-            },
-          }
+          type: "radar" as const,
+          data: {
+            etfs: results.slice(0, 4).map((r: ETFProduct) => ({
+              name: r.name,
+              수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
+              안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
+              수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
+              규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
+              성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
+            })),
+          },
+        }
         : undefined;
       return {
         result: results.map((r: ETFProduct) => ({
@@ -380,7 +399,7 @@ export async function POST(request: NextRequest) {
     `🤖 에이전트 라우팅 → ${agent.displayName} (${agent.description})`
   );
 
-  let openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
+  const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
     { role: "system", content: agent.systemPrompt },
     ...history,
     { role: "user", content: userMessage },

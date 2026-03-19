@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, ArrowRight, RotateCcw, ChevronRight, Loader2, User, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, RotateCcw, ChevronRight, Loader2, User, Sparkles } from "lucide-react";
 
 interface Question {
   id: number;
@@ -224,11 +225,12 @@ export default function QuizPage() {
   const [answers, setAnswers] = useState<number[]>([]);
   const [answerLabels, setAnswerLabels] = useState<string[]>([]);
   const [result, setResult] = useState<InvestorType | null>(null);
-  const [totalScore, setTotalScore] = useState(0);
+  const [, setTotalScore] = useState(0);
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [savedResult, setSavedResult] = useState<SavedResult | null>(null);
   const [showSaved, setShowSaved] = useState(false);
+  // totalScore is tracked via state setter, used in getInvestorType
 
   // 저장된 결과 로드
   useEffect(() => {
@@ -365,9 +367,9 @@ export default function QuizPage() {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-          <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
             <ArrowLeft className="w-4 h-4" />
-          </a>
+          </Link>
           <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-xs">K</span>
           </div>
@@ -415,9 +417,8 @@ export default function QuizPage() {
               {Object.values(INVESTOR_TYPES).map((t) => (
                 <div
                   key={t.type}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                    t.type === type.type ? `${t.bgColor} border` : "hover:bg-gray-50"
-                  }`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${t.type === type.type ? `${t.bgColor} border` : "hover:bg-gray-50"
+                    }`}
                 >
                   <span className="text-lg">{t.emoji}</span>
                   <span className={`text-sm font-medium flex-1 ${t.type === type.type ? t.color : "text-gray-600"}`}>
@@ -576,13 +577,13 @@ export default function QuizPage() {
               <RotateCcw className="w-4 h-4" />
               다시 분석하기
             </button>
-            <a
+            <Link
               href="/"
               className="flex-1 py-3 rounded-xl bg-[#1428a0] text-white font-medium hover:bg-[#0f1f7a] transition-colors flex items-center justify-center gap-2"
             >
               AI에게 더 물어보기
               <ChevronRight className="w-4 h-4" />
-            </a>
+            </Link>
           </div>
         </main>
       </div>
@@ -600,9 +601,9 @@ export default function QuizPage() {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-          <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
             <ArrowLeft className="w-4 h-4" />
-          </a>
+          </Link>
           <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-xs">K</span>
           </div>
@@ -623,9 +624,8 @@ export default function QuizPage() {
                 {Array.from({ length: 6 }, (_, i) => (
                   <div
                     key={i}
-                    className={`w-4 h-4 rounded-sm ${
-                      i < result.riskLevel ? "bg-[#1428a0]" : "bg-gray-200"
-                    }`}
+                    className={`w-4 h-4 rounded-sm ${i < result.riskLevel ? "bg-[#1428a0]" : "bg-gray-200"
+                      }`}
                   />
                 ))}
               </div>
@@ -701,9 +701,8 @@ export default function QuizPage() {
               {Object.values(INVESTOR_TYPES).map((t) => (
                 <div
                   key={t.type}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                    t.type === result.type ? `${t.bgColor} border` : "hover:bg-gray-50"
-                  }`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${t.type === result.type ? `${t.bgColor} border` : "hover:bg-gray-50"
+                    }`}
                 >
                   <span className="text-lg">{t.emoji}</span>
                   <span className={`text-sm font-medium flex-1 ${t.type === result.type ? t.color : "text-gray-600"}`}>
@@ -823,13 +822,13 @@ export default function QuizPage() {
               <RotateCcw className="w-4 h-4" />
               다시 분석하기
             </button>
-            <a
+            <Link
               href="/"
               className="flex-1 py-3 rounded-xl bg-[#1428a0] text-white font-medium hover:bg-[#0f1f7a] transition-colors flex items-center justify-center gap-2"
             >
               AI에게 더 물어보기
               <ChevronRight className="w-4 h-4" />
-            </a>
+            </Link>
           </div>
         </main>
       </div>
@@ -843,9 +842,9 @@ export default function QuizPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
           <ArrowLeft className="w-4 h-4" />
-        </a>
+        </Link>
         <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
           <span className="text-white font-bold text-xs">K</span>
         </div>

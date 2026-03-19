@@ -12,7 +12,6 @@ import {
   Clock,
   ThumbsUp,
   ThumbsDown,
-  Settings,
   Search,
   Database,
   FileText,
@@ -109,15 +108,15 @@ const HOURLY_DATA = Array.from({ length: 24 }, (_, i) => ({
   hour: `${i}시`,
   호출수:
     i < 6 ? Math.floor(Math.random() * 5) + 1 :
-    i < 9 ? Math.floor(Math.random() * 20) + 10 :
-    i === 10 ? 85 :
-    i === 11 ? 72 :
-    i < 13 ? Math.floor(Math.random() * 30) + 20 :
-    i === 14 ? 92 :
-    i === 15 ? 78 :
-    i < 18 ? Math.floor(Math.random() * 40) + 30 :
-    i < 21 ? Math.floor(Math.random() * 25) + 15 :
-    Math.floor(Math.random() * 10) + 3,
+      i < 9 ? Math.floor(Math.random() * 20) + 10 :
+        i === 10 ? 85 :
+          i === 11 ? 72 :
+            i < 13 ? Math.floor(Math.random() * 30) + 20 :
+              i === 14 ? 92 :
+                i === 15 ? 78 :
+                  i < 18 ? Math.floor(Math.random() * 40) + 30 :
+                    i < 21 ? Math.floor(Math.random() * 25) + 15 :
+                      Math.floor(Math.random() * 10) + 3,
 }));
 
 const STATS = {
@@ -207,11 +206,10 @@ export default function AdminPage() {
               <button
                 key={key}
                 onClick={() => setTab(key)}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                  tab === key
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${tab === key
                     ? "bg-white text-gray-800 shadow-sm font-medium"
                     : "text-gray-500 hover:text-gray-700"
-                }`}
+                  }`}
               >
                 {label}
               </button>
@@ -235,12 +233,11 @@ export default function AdminPage() {
                 <div key={stat.label} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm text-gray-500">{stat.label}</span>
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      stat.color === "blue" ? "bg-blue-50 text-blue-600" :
-                      stat.color === "green" ? "bg-green-50 text-green-600" :
-                      stat.color === "purple" ? "bg-purple-50 text-purple-600" :
-                      "bg-orange-50 text-orange-600"
-                    }`}>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${stat.color === "blue" ? "bg-blue-50 text-blue-600" :
+                        stat.color === "green" ? "bg-green-50 text-green-600" :
+                          stat.color === "purple" ? "bg-purple-50 text-purple-600" :
+                            "bg-orange-50 text-orange-600"
+                      }`}>
                       {stat.icon}
                     </div>
                   </div>
@@ -320,9 +317,8 @@ export default function AdminPage() {
                   {topQueries.map((q, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
                       <span className="text-gray-600 truncate flex-1 flex items-center gap-2">
-                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                          i < 3 ? "bg-[#1428a0] text-white" : "bg-gray-100 text-gray-500"
-                        }`}>{i + 1}</span>
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${i < 3 ? "bg-[#1428a0] text-white" : "bg-gray-100 text-gray-500"
+                          }`}>{i + 1}</span>
                         {q.query}
                       </span>
                       <span className="text-gray-400 text-xs ml-2">{q.count}회</span>
@@ -358,17 +354,16 @@ export default function AdminPage() {
                     <td className="px-5 py-3 font-mono text-xs text-gray-500">{c.user}</td>
                     <td className="px-5 py-3 text-gray-700 max-w-xs truncate">{c.query}</td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        c.agent.includes("분석") ? "bg-green-50 text-green-700" :
-                        c.agent.includes("추천") ? "bg-purple-50 text-purple-700" :
-                        "bg-blue-50 text-blue-700"
-                      }`}>{c.agent}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${c.agent.includes("분석") ? "bg-green-50 text-green-700" :
+                          c.agent.includes("추천") ? "bg-purple-50 text-purple-700" :
+                            "bg-blue-50 text-blue-700"
+                        }`}>{c.agent}</span>
                     </td>
                     <td className="px-5 py-3 text-gray-500">{c.responseTime}초</td>
                     <td className="px-5 py-3">
                       {c.feedback === "positive" ? <ThumbsUp className="w-4 h-4 text-green-500" /> :
-                       c.feedback === "negative" ? <ThumbsDown className="w-4 h-4 text-red-500" /> :
-                       <span className="text-gray-300 text-xs">-</span>}
+                        c.feedback === "negative" ? <ThumbsDown className="w-4 h-4 text-red-500" /> :
+                          <span className="text-gray-300 text-xs">-</span>}
                     </td>
                   </tr>
                 ))}
@@ -435,24 +430,21 @@ export default function AdminPage() {
                 { label: "평균 검색시간", value: "850", unit: "ms", color: "purple" },
                 { label: "총 청크 수", value: "1,247", unit: "개", color: "blue" },
               ].map((s) => (
-                <div key={s.label} className={`text-center p-5 rounded-xl border ${
-                  s.color === "indigo" ? "bg-indigo-50 border-indigo-200" :
-                  s.color === "teal" ? "bg-teal-50 border-teal-200" :
-                  s.color === "purple" ? "bg-purple-50 border-purple-200" :
-                  "bg-blue-50 border-blue-200"
-                }`}>
-                  <div className={`text-2xl font-bold ${
-                    s.color === "indigo" ? "text-indigo-700" :
-                    s.color === "teal" ? "text-teal-700" :
-                    s.color === "purple" ? "text-purple-700" :
-                    "text-blue-700"
-                  }`}>{s.value}</div>
-                  <div className={`text-xs mt-1 ${
-                    s.color === "indigo" ? "text-indigo-500" :
-                    s.color === "teal" ? "text-teal-500" :
-                    s.color === "purple" ? "text-purple-500" :
-                    "text-blue-500"
-                  }`}>{s.label} ({s.unit})</div>
+                <div key={s.label} className={`text-center p-5 rounded-xl border ${s.color === "indigo" ? "bg-indigo-50 border-indigo-200" :
+                    s.color === "teal" ? "bg-teal-50 border-teal-200" :
+                      s.color === "purple" ? "bg-purple-50 border-purple-200" :
+                        "bg-blue-50 border-blue-200"
+                  }`}>
+                  <div className={`text-2xl font-bold ${s.color === "indigo" ? "text-indigo-700" :
+                      s.color === "teal" ? "text-teal-700" :
+                        s.color === "purple" ? "text-purple-700" :
+                          "text-blue-700"
+                    }`}>{s.value}</div>
+                  <div className={`text-xs mt-1 ${s.color === "indigo" ? "text-indigo-500" :
+                      s.color === "teal" ? "text-teal-500" :
+                        s.color === "purple" ? "text-purple-500" :
+                          "text-blue-500"
+                    }`}>{s.label} ({s.unit})</div>
                 </div>
               ))}
             </div>

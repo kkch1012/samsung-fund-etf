@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore, useCallback } from "react";
+import Link from "next/link";
 import { ArrowLeft, RotateCcw, ChevronRight, User, Sparkles, TrendingUp } from "lucide-react";
 
 interface InvestorType {
@@ -47,38 +48,43 @@ interface SavedResult {
 
 const STORAGE_KEY = "kodex-quiz-result";
 
-export default function MyPage() {
-  const [savedResult, setSavedResult] = useState<SavedResult | null>(null);
-  const [loading, setLoading] = useState(true);
+function subscribeToStorage(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setSavedResult(JSON.parse(saved));
-      }
-    } catch {
-      // ignore
-    }
-    setLoading(false);
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">로딩 중...</div>
-      </div>
-    );
+function getStorageSnapshot(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
   }
+}
+
+function getServerSnapshot(): string | null {
+  return null;
+}
+
+export default function MyPage() {
+  const raw = useSyncExternalStore(subscribeToStorage, getStorageSnapshot, getServerSnapshot);
+  const savedResult: SavedResult | null = useCallback(() => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as SavedResult;
+    } catch {
+      return null;
+    }
+  }, [raw])();
+
 
   // 진단 결과 없는 경우
   if (!savedResult) {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-          <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+          <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
             <ArrowLeft className="w-4 h-4" />
-          </a>
+          </Link>
           <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-xs">K</span>
           </div>
@@ -93,14 +99,14 @@ export default function MyPage() {
           <p className="text-sm text-gray-500 mb-8">
             5개 질문에 답변하면 AI가 맞춤 투자 유형을 분석해드려요
           </p>
-          <a
+          <Link
             href="/quiz"
             className="inline-flex items-center gap-2 px-6 py-3 bg-[#1428a0] text-white font-medium rounded-xl hover:bg-[#0f1f7a] transition-colors"
           >
             <Sparkles className="w-4 h-4" />
             투자 성향 진단하기
             <ChevronRight className="w-4 h-4" />
-          </a>
+          </Link>
         </main>
       </div>
     );
@@ -119,9 +125,9 @@ export default function MyPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
           <ArrowLeft className="w-4 h-4" />
-        </a>
+        </Link>
         <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
           <span className="text-white font-bold text-xs">K</span>
         </div>
@@ -140,13 +146,13 @@ export default function MyPage() {
               <h2 className={`text-xl font-bold ${type.color}`}>{type.type}</h2>
               <p className="text-xs text-gray-500 mt-0.5">위험 등급 {type.riskLevel}/6 | 총점 {savedResult.totalScore}/25</p>
             </div>
-            <a
+            <Link
               href="/quiz"
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               다시 분석
-            </a>
+            </Link>
           </div>
 
           {/* 위험 등급 바 */}
@@ -156,15 +162,14 @@ export default function MyPage() {
               {Array.from({ length: 6 }, (_, i) => (
                 <div
                   key={i}
-                  className={`flex-1 h-3 rounded-sm transition-all ${
-                    i < type.riskLevel
-                      ? i < 2
-                        ? "bg-blue-400"
-                        : i < 4
+                  className={`flex-1 h-3 rounded-sm transition-all ${i < type.riskLevel
+                    ? i < 2
+                      ? "bg-blue-400"
+                      : i < 4
                         ? "bg-green-400"
                         : "bg-red-400"
-                      : "bg-gray-100"
-                  }`}
+                    : "bg-gray-100"
+                    }`}
                 />
               ))}
             </div>
@@ -255,13 +260,13 @@ export default function MyPage() {
             ))}
           </div>
           {isAIPortfolio && (
-            <a
+            <Link
               href="/portfolio"
               className="mt-4 flex items-center justify-center gap-1.5 py-2 text-xs text-[#1428a0] bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
             >
               포트폴리오 시뮬레이터에서 비중 조절하기
               <ChevronRight className="w-3.5 h-3.5" />
-            </a>
+            </Link>
           )}
         </div>
 
@@ -272,16 +277,12 @@ export default function MyPage() {
             <div
               className="w-40 h-40 rounded-full relative"
               style={{
-                background: (() => {
-                  const e = displayETFs;
+                background: `conic-gradient(${displayETFs.map((etf, i) => {
                   const colors = ["#1428a0", "#22c55e", "#f59e0b", "#8b5cf6"];
-                  let acc = 0;
-                  return `conic-gradient(${e.map((etf, i) => {
-                    const start = acc;
-                    acc += etf.weight;
-                    return `${colors[i % colors.length]} ${start}% ${acc}%`;
-                  }).join(", ")})`;
-                })(),
+                  const start = displayETFs.slice(0, i).reduce((a, b) => a + b.weight, 0);
+                  const end = start + etf.weight;
+                  return `${colors[i % colors.length]} ${start}% ${end}%`;
+                }).join(", ")})`,
               }}
             >
               <div className="absolute inset-4 bg-white rounded-full" />
@@ -308,20 +309,20 @@ export default function MyPage() {
 
         {/* 하단 버튼 */}
         <div className="flex gap-3">
-          <a
+          <Link
             href="/quiz"
             className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
           >
             <RotateCcw className="w-4 h-4" />
             다시 분석하기
-          </a>
-          <a
+          </Link>
+          <Link
             href="/"
             className="flex-1 py-3 rounded-xl bg-[#1428a0] text-white font-medium hover:bg-[#0f1f7a] transition-colors flex items-center justify-center gap-2"
           >
             AI에게 더 물어보기
             <ChevronRight className="w-4 h-4" />
-          </a>
+          </Link>
         </div>
       </main>
     </div>

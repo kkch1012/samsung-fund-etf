@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
+import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -89,14 +90,12 @@ const PRESET_PORTFOLIOS: PresetPortfolio[] = [
 
 const STORAGE_KEY = "kodex-quiz-result";
 
-export default function PortfolioPage() {
-  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(PRESET_PORTFOLIOS);
-  const [selectedPreset, setSelectedPreset] = useState(2); // 균형 추구형 기본
-  const [investAmount, setInvestAmount] = useState(1000);
-  const [weights, setWeights] = useState<number[]>(PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight));
+function getInitialPortfolioState() {
+  let presets = PRESET_PORTFOLIOS;
+  let selectedIdx = 2; // 균형 추구형 기본
+  let initialWeights = PRESET_PORTFOLIOS[2].etfs.map((e) => e.weight);
 
-  // localStorage에서 AI 맞춤 포트폴리오 로드
-  useEffect(() => {
+  if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -108,16 +107,26 @@ export default function PortfolioPage() {
             isAI: true,
             etfs: parsed.aiPortfolio,
           };
-          setAllPresets([aiPreset, ...PRESET_PORTFOLIOS]);
-          // AI 맞춤을 기본 선택
-          setSelectedPreset(0);
-          setWeights(parsed.aiPortfolio.map((e: ETFAllocation) => e.weight));
+          presets = [aiPreset, ...PRESET_PORTFOLIOS];
+          selectedIdx = 0;
+          initialWeights = parsed.aiPortfolio.map((e: ETFAllocation) => e.weight);
         }
       }
     } catch {
       // ignore
     }
-  }, []);
+  }
+
+  return { presets, selectedIdx, initialWeights };
+}
+
+export default function PortfolioPage() {
+  const [initial] = useState(getInitialPortfolioState);
+  const [allPresets, setAllPresets] = useState<PresetPortfolio[]>(initial.presets);
+  const [selectedPreset, setSelectedPreset] = useState(initial.selectedIdx);
+  const [investAmount, setInvestAmount] = useState(1000);
+  const [weights, setWeights] = useState<number[]>(initial.initialWeights);
+
 
   const portfolio = allPresets[selectedPreset];
 
@@ -220,9 +229,9 @@ export default function PortfolioPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-        <a href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
+        <Link href="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-800">
           <ArrowLeft className="w-4 h-4" />
-        </a>
+        </Link>
         <div className="w-8 h-8 bg-[#1428a0] rounded-lg flex items-center justify-center">
           <span className="text-white font-bold text-xs">K</span>
         </div>
@@ -261,13 +270,12 @@ export default function PortfolioPage() {
             <button
               key={preset.name}
               onClick={() => changePreset(i)}
-              className={`py-3 px-3 rounded-xl border-2 text-center transition-all ${
-                selectedPreset === i
-                  ? preset.isAI
-                    ? "border-purple-500 bg-purple-50 text-purple-700"
-                    : "border-[#1428a0] bg-blue-50 text-[#1428a0]"
-                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-              }`}
+              className={`py-3 px-3 rounded-xl border-2 text-center transition-all ${selectedPreset === i
+                ? preset.isAI
+                  ? "border-purple-500 bg-purple-50 text-purple-700"
+                  : "border-[#1428a0] bg-blue-50 text-[#1428a0]"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
             >
               <div className="text-sm font-bold flex items-center justify-center gap-1">
                 {preset.isAI && <Sparkles className="w-3.5 h-3.5" />}

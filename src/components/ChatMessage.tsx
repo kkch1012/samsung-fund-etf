@@ -15,6 +15,7 @@ import {
   Target,
   BarChart3,
   MessageSquare,
+  MousePointerClick,
 } from "lucide-react";
 
 const ETFChart = dynamic(() => import("./ETFChart"), { ssr: false });
@@ -96,6 +97,123 @@ function extractSuggestedQuestions(content: string): { mainContent: string; ques
   return { mainContent, questions };
 }
 
+// === 역질문(슬롯 필링) 선택지 추출 ===
+interface SlotOption {
+  label: string;       // 버튼에 표시할 짧은 텍스트
+  fullText: string;    // 클릭 시 전송할 전체 텍스트
+  emoji?: string;      // 이모지
+}
+
+function extractSlotFillingOptions(content: string): SlotOption[] {
+  const options: SlotOption[] = [];
+  const lines = content.split("\n");
+
+  // 역질문 패턴 감지: "여쭤볼게요", "알려주세요", "찾으시나요", "어떠신가요" 등이 포함되면 슬롯 필링
+  const isSlotFilling = lines.some(line => {
+    const l = line.toLowerCase();
+    return (
+      l.includes("여쭤볼게요") ||
+      l.includes("여쭤볼께요") ||
+      l.includes("알려주세요") ||
+      l.includes("어떤") && l.includes("찾") ||
+      l.includes("찾으시나요") ||
+      l.includes("어떠신가요") ||
+      l.includes("어떻게 되") ||
+      l.includes("생각하시") ||
+      l.includes("어떠세요") ||
+      l.includes("어떤가요") ||
+      l.includes("좀 더 정확한") ||
+      l.includes("맞춤") && l.includes("위해") ||
+      l.includes("위해 몇 가지")
+    );
+  });
+
+  if (!isSlotFilling) return [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // 패턴 1: "• **국내 반도체** ETF (삼성전자, SK하이닉스 등 한국 기업)" → "국내 반도체 ETF"
+    // 패턴 2: "• 수익률 위주로 찾으시나요?" → "수익률 위주"
+    // 패턴 3: "1️⃣ **투자 목적**이 무엇인가요? (안정적 배당 수익 / 자산 성장 / 분산 투자)"
+    // 패턴 4: "- **국내 반도체 ETF** 를 찾으시나요, **해외 반도체 ETF** 를 찾으시나요?"
+
+    // 괄호 안에 슬래시로 구분된 옵션 추출: (안정적 배당 수익 / 자산 성장 / 분산 투자)
+    const parenSlashMatch = trimmed.match(/\(([^)]+\/[^)]+)\)/);
+    if (parenSlashMatch) {
+      const opts = parenSlashMatch[1].split("/").map(o => o.trim()).filter(o => o.length > 0);
+      for (const opt of opts) {
+        const clean = opt.replace(/\*\*/g, "").trim();
+        if (clean.length > 0 && clean.length < 30) {
+          options.push({
+            label: clean,
+            fullText: clean,
+          });
+        }
+      }
+      continue;
+    }
+
+    // 볼드 텍스트로 된 선택지 추출 (한 줄에 여러 볼드가 있는 경우)
+    // "**국내 반도체** ETF를 찾으시나요, **해외 반도체** ETF를 찾으시나요?"
+    const boldParts = trimmed.match(/\*\*([^*]+)\*\*/g);
+    if (boldParts && boldParts.length >= 2 && (trimmed.includes("찾으시") || trimmed.includes("나요") || trimmed.includes("기준"))) {
+      for (const bp of boldParts) {
+        const clean = bp.replace(/\*\*/g, "").trim();
+        // 키워드 필터: 너무 일반적인 단어 제외
+        if (clean.length > 1 && clean.length < 25 && !clean.includes("질문") && !clean.includes("추가")) {
+          // 문맥에 맞는 전체 텍스트 구성
+          const suffix = trimmed.includes("ETF") ? " ETF" : "";
+          options.push({
+            label: clean + suffix,
+            fullText: clean + suffix,
+          });
+        }
+      }
+      continue;
+    }
+
+    // 불릿/넘버 리스트 선택지: "• 국내 반도체 ETF (삼성전자 ...)" → "국내 반도체 ETF"
+    const bulletMatch = trimmed.match(/^[•\-]\s*\*?\*?(.+?)(?:\*\*)?(?:\s*\(.*\))?(?:\s*[?？])?$/);
+    if (bulletMatch) {
+      let label = bulletMatch[1].replace(/\*\*/g, "").trim();
+      // 괄호 이후 제거
+      label = label.replace(/\s*\(.*$/, "").trim();
+      // "~를 찾으시나요" 등의 질문형 어미 제거
+      label = label.replace(/[를을이가은는]\s*(찾으시나요|위주로|어떠신가요|생각하시나요).*$/, "").trim();
+      // "~위주로 찾으시나요?" → 핵심 키워드만
+      if (label.includes("위주로")) {
+        label = label.replace(/\s*위주로.*$/, "").trim();
+      }
+
+      if (label.length > 1 && label.length < 30 && !label.match(/^[0-9️⃣]+$/) && !label.includes("이런 것")) {
+        options.push({
+          label,
+          fullText: label,
+        });
+      }
+    }
+
+    // 넘버 이모지 리스트: "1️⃣ **투자 목적**이 무엇인가요?"
+    const emojiNumMatch = trimmed.match(/^[1-9]️⃣\s*\*?\*?(.+?)(?:\*\*)?(?:이|이란|이\s|은|는|를|이\s*무엇).*$/);
+    if (emojiNumMatch && !parenSlashMatch) {
+      const label = emojiNumMatch[1].replace(/\*\*/g, "").trim();
+      if (label.length > 1 && label.length < 20) {
+        // 이건 카테고리 헤더이므로 선택지로 추가하지 않음 (하위 옵션이 있을 때)
+        // 하지만 하위 옵션이 없으면 추가
+        // -> 일단 스킵, 괄호 옵션에서 이미 처리됨
+      }
+    }
+  }
+
+  // 중복 제거
+  const unique = options.filter((opt, idx, arr) =>
+    arr.findIndex(o => o.label === opt.label) === idx
+  );
+
+  return unique;
+}
+
 interface ChartDataItem {
   type: "performance" | "compare" | "returns" | "radar";
   data: Record<string, unknown>;
@@ -123,6 +241,7 @@ export default function ChatMessage({
   onAskQuestion,
 }: ChatMessageProps) {
   const [showSteps, setShowSteps] = useState(true);
+  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
 
   if (role === "user") {
     return (
@@ -152,6 +271,36 @@ export default function ChatMessage({
 
   const parsedSteps = (steps || []).map(parseStep);
   const { mainContent, questions: suggestedQuestions } = extractSuggestedQuestions(content);
+  const slotOptions = extractSlotFillingOptions(content);
+
+  // 선택지 클릭 핸들러
+  const handleOptionClick = (option: SlotOption) => {
+    if (!onAskQuestion) return;
+
+    setSelectedOptions(prev => {
+      const next = new Set(prev);
+      if (next.has(option.label)) {
+        next.delete(option.label);
+      } else {
+        next.add(option.label);
+      }
+      return next;
+    });
+  };
+
+  // 선택 완료 후 전송
+  const handleSendSelected = () => {
+    if (!onAskQuestion || selectedOptions.size === 0) return;
+    const text = Array.from(selectedOptions).join(", ");
+    setSelectedOptions(new Set());
+    onAskQuestion(text);
+  };
+
+  // 단일 옵션 바로 전송
+  const handleDirectSend = (option: SlotOption) => {
+    if (!onAskQuestion) return;
+    onAskQuestion(option.fullText);
+  };
 
   return (
     <div className="flex justify-start mb-4">
@@ -218,6 +367,54 @@ export default function ChatMessage({
               dangerouslySetInnerHTML={{ __html: formatMarkdown(mainContent) }}
             />
           </div>
+
+          {/* 역질문 선택지 (슬롯 필링) 버튼 */}
+          {slotOptions.length > 0 && onAskQuestion && (
+            <div className="slot-filling-options">
+              <div className="flex items-center gap-1.5 mb-2">
+                <MousePointerClick className="w-3.5 h-3.5 text-violet-500" />
+                <span className="text-xs font-medium text-violet-600">아래에서 선택하세요</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {slotOptions.map((opt, i) => {
+                  const isSelected = selectedOptions.has(opt.label);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => slotOptions.length <= 3 ? handleDirectSend(opt) : handleOptionClick(opt)}
+                      className={`
+                        slot-option-chip
+                        flex items-center gap-1.5 text-[13px] font-medium
+                        px-3.5 py-2 rounded-xl
+                        border transition-all duration-200
+                        hover:shadow-md hover:-translate-y-0.5
+                        active:scale-95
+                        ${isSelected
+                          ? "bg-violet-100 text-violet-800 border-violet-300 shadow-sm ring-2 ring-violet-200"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-violet-300 hover:text-violet-700 hover:bg-violet-50"
+                        }
+                      `}
+                      style={{ animationDelay: `${i * 80}ms` }}
+                    >
+                      {opt.emoji && <span>{opt.emoji}</span>}
+                      {isSelected && <span className="text-violet-500">✓</span>}
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* 다중 선택 모드일 때 전송 버튼 */}
+              {slotOptions.length > 3 && selectedOptions.size > 0 && (
+                <button
+                  onClick={handleSendSelected}
+                  className="mt-2 flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors shadow-sm"
+                >
+                  <MousePointerClick className="w-3.5 h-3.5" />
+                  선택 완료 ({selectedOptions.size}개)
+                </button>
+              )}
+            </div>
+          )}
 
           {/* 차트 시각화 */}
           {charts && charts.length > 0 && (

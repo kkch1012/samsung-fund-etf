@@ -63,13 +63,32 @@ export default function Home() {
   const [showProcessSteps, setShowProcessSteps] = useState(true);
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const userScrolledUpRef = useRef(false);
+  const scrollTickRef = useRef(false);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (userScrolledUpRef.current || scrollTickRef.current) return;
+    scrollTickRef.current = true;
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      scrollTickRef.current = false;
+    });
   }, [messages, loadingSteps]);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      userScrolledUpRef.current = !atBottom;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // 자동 포커스
   useEffect(() => {
@@ -198,6 +217,7 @@ export default function Home() {
       content: messageText,
     };
     setMessages((prev) => [...prev, userMsg]);
+    userScrolledUpRef.current = false;
     setLoading(true);
     setLoadingSteps([]);
 
@@ -441,7 +461,7 @@ export default function Home() {
       </header>
 
       {/* 메시지 영역 */}
-      <main className="flex-1 overflow-y-auto px-4 py-6">
+      <main ref={mainRef} className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 ? (
           <SuggestedQuestions onSelect={(q) => sendMessage(q)} />
         ) : (

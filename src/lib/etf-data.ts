@@ -4164,7 +4164,16 @@ export const ETF_DATABASE: ETFProduct[] = [
   }
 ];
 
-// 가격 히스토리 생성 (상세 조회 시 동적 생성)
+// 결정적 유사난수 생성기 (시드 기반 - 동일 입력 시 항상 같은 결과)
+function seededRandom(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+// 가격 히스토리 생성 (상세 조회 시 동적 생성 - 결정적)
 function generatePriceHistory(
   currentPrice: number,
   yearReturn: number
@@ -4172,12 +4181,13 @@ function generatePriceHistory(
   const history: { date: string; price: number }[] = [];
   const startPrice = currentPrice / (1 + yearReturn / 100);
   const days = 252;
+  const rng = seededRandom(Math.round(currentPrice * 100) + Math.round(yearReturn * 100));
 
   for (let i = 0; i < days; i++) {
     const date = new Date();
     date.setDate(date.getDate() - (days - i));
     const progress = i / days;
-    const noise = (Math.random() - 0.5) * currentPrice * 0.02;
+    const noise = (rng() - 0.5) * currentPrice * 0.02;
     const price = startPrice + (currentPrice - startPrice) * progress + noise;
     history.push({
       date: date.toISOString().split("T")[0],
@@ -4392,13 +4402,21 @@ export function searchNews(query: string, days: number = 7) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
-  return SAMPLE_NEWS.filter((n) => {
-    const matchQuery =
-      n.title.toLowerCase().includes(q) ||
+  // 키워드 매칭 결과
+  const matched = SAMPLE_NEWS.filter((n) => {
+    return n.title.toLowerCase().includes(q) ||
       n.summary.toLowerCase().includes(q);
-    const inRange = new Date(n.date) >= cutoff;
-    return matchQuery && inRange;
   });
+
+  // 날짜 범위 내 매칭 우선, 없으면 전체 매칭 반환
+  const inRange = matched.filter(n => new Date(n.date) >= cutoff);
+  if (inRange.length > 0) return inRange;
+
+  // 날짜 범위 밖이라도 키워드 매칭 결과 반환 (시연 안정성)
+  if (matched.length > 0) return matched;
+
+  // 키워드 매칭도 없으면 최신 뉴스 3개 반환
+  return SAMPLE_NEWS.slice(0, 3);
 }
 
 export function recommendETF(

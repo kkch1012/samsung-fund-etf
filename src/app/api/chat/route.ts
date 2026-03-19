@@ -152,7 +152,35 @@ function executeTool(
       const detail = getETFDetail(toolInput.ticker as string);
       if (detail) {
         steps.push(`✅ ${detail.name} 상세 정보 조회 완료`);
-        return { result: detail, steps };
+        const priceHistory = detail.priceHistory || [];
+        return {
+          result: {
+            ticker: detail.ticker,
+            name: detail.name,
+            category: detail.category,
+            subCategory: detail.subCategory,
+            index: detail.index,
+            nav: detail.nav,
+            aum: detail.aum,
+            fee: detail.fee,
+            return1M: detail.return1M,
+            return3M: detail.return3M,
+            return6M: detail.return6M,
+            return1Y: detail.return1Y,
+            return3Y: detail.return3Y,
+            mdd: detail.mdd,
+            description: detail.description,
+          },
+          steps,
+          chartData: priceHistory.length > 0 ? {
+            type: "performance" as const,
+            data: {
+              ticker: detail.ticker,
+              name: detail.name,
+              priceHistory,
+            },
+          } : undefined,
+        };
       }
       steps.push("❌ 종목을 찾을 수 없습니다");
       return { result: null, steps };
@@ -231,6 +259,21 @@ function executeTool(
           },
         }
         : undefined;
+      // 각 비교 종목의 개별 가격 차트도 생성
+      const perfCharts: ChartData[] = results.slice(0, 3).map((r: ETFProduct) => {
+        const detail = getETFDetail(r.ticker);
+        return {
+          type: "performance" as const,
+          data: {
+            ticker: r.ticker,
+            name: r.name,
+            priceHistory: detail?.priceHistory || [],
+          },
+        };
+      });
+      const allExtra: ChartData[] = [];
+      if (radarChart) allExtra.push(radarChart);
+      allExtra.push(...perfCharts);
       return {
         result: results.map((r: ETFProduct) => ({
           ticker: r.ticker,
@@ -243,10 +286,11 @@ function executeTool(
           return1Y: r.return1Y,
           return3Y: r.return3Y,
           aum: r.aum,
+          mdd: r.mdd,
         })),
         steps,
         chartData: compareChart,
-        extraCharts: radarChart ? [radarChart] : undefined,
+        extraCharts: allExtra.length > 0 ? allExtra : undefined,
       };
     }
 
@@ -325,6 +369,36 @@ function executeTool(
       if (result && result.alternatives.length > 0) {
         steps.push(`✅ ${result.brand} 상품 → KODEX 대안 ${result.alternatives.length}개 매칭`);
         const radarEtfs = result.alternatives.slice(0, 3);
+        // 레이더 차트
+        const radarChart: ChartData | undefined = radarEtfs.length >= 2 ? {
+          type: "radar" as const,
+          data: {
+            etfs: radarEtfs.map((r) => ({
+              name: r.name,
+              수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
+              안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
+              수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
+              규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
+              성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
+            })),
+          },
+        } : undefined;
+        // 각 대안 ETF의 개별 가격 차트 생성
+        const perfCharts: ChartData[] = radarEtfs.map((r) => {
+          const detail = getETFDetail(r.ticker);
+          return {
+            type: "performance" as const,
+            data: {
+              ticker: r.ticker,
+              name: r.name,
+              priceHistory: detail?.priceHistory || [],
+            },
+          };
+        });
+        steps.push(`📊 대안 ${radarEtfs.length}개 종목 가격 차트 생성 완료`);
+        const allExtraCharts: ChartData[] = [];
+        if (radarChart) allExtraCharts.push(radarChart);
+        allExtraCharts.push(...perfCharts);
         return {
           result: {
             competitor: result.competitor,
@@ -343,19 +417,8 @@ function executeTool(
             })),
           },
           steps,
-          chartData: radarEtfs.length >= 2 ? {
-            type: "radar" as const,
-            data: {
-              etfs: radarEtfs.map((r) => ({
-                name: r.name,
-                수익률: Math.max(0, Math.min(100, (r.return1Y + 50))),
-                안정성: Math.max(0, Math.min(100, 100 - Math.abs(r.mdd))),
-                수수료: Math.max(0, Math.min(100, 100 - r.fee * 100)),
-                규모: Math.max(0, Math.min(100, Math.log10(r.aum + 1) * 20)),
-                성장성: Math.max(0, Math.min(100, (r.return3M + 30) * 1.5)),
-              })),
-            },
-          } : undefined,
+          chartData: allExtraCharts[0],
+          extraCharts: allExtraCharts.slice(1),
         };
       }
       steps.push("❌ 해당 경쟁사 ETF에 대한 KODEX 대안을 찾을 수 없습니다");
@@ -387,6 +450,46 @@ function isInvestmentTimingQuestion(message: string): boolean {
   return patterns.some(p => m.includes(p));
 }
 
+// ETF/금융 관련 질문인지 감지 (도메인 외 차단용)
+function isETFRelatedQuestion(message: string): boolean {
+  const m = message.toLowerCase();
+  const etfKeywords = [
+    "etf", "kodex", "tiger", "ace", "rise", "sol", "arirang",
+    "펀드", "투자", "주식", "채권", "수익률", "배당", "보수", "수수료",
+    "반도체", "2차전지", "배터리", "ai ", "인공지능", "바이오", "헬스케어",
+    "s&p", "나스닥", "nasdaq", "코스피", "코스닥", "kospi",
+    "포트폴리오", "분산투자", "리밸런싱", "자산배분",
+    "레버리지", "인버스", "커버드콜", "환헷지",
+    "금", "원유", "원자재", "금리", "국채", "회사채",
+    "시장", "경제", "금융", "증권", "운용", "삼성",
+    "매수", "매도", "사야", "팔아", "갖고 있", "보유",
+    "추천", "비교", "분석", "전망", "동향",
+    "수익", "손실", "위험", "리스크", "변동",
+    "테마", "섹터", "업종", "지수", "벤치마크",
+    "갈아탈", "대안", "대체", "대신",
+    "월배당", "분기배당", "고배당",
+    "장기", "단기", "적립식", "거치식",
+    "isa", "연금", "irp", "퇴직연금",
+    "초보", "입문", "가이드",
+    "투자설명서", "운용보고서",
+    "aum", "nav", "시가총액",
+    "mdd", "샤프비율", "변동성",
+  ];
+  return etfKeywords.some(k => m.includes(k));
+}
+
+// 도메인 외 질문에 대한 거절 응답
+const DOMAIN_REJECTION_RESPONSE = `저는 삼성자산운용 **KODEX ETF 전문 상담 AI 에이전트**입니다. 😊
+
+ETF 상품 정보, 수익률 분석, 투자 상담 등 **ETF 관련 질문**에 답변드릴 수 있습니다.
+
+궁금하신 ETF 관련 질문이 있으시면 편하게 물어보세요!
+
+📌 **이런 질문을 해보세요:**
+1. KODEX 반도체 ETF 수익률이 어떻게 되나요?
+2. 안정적인 배당 ETF를 추천해주세요
+3. S&P500 ETF와 나스닥100 ETF를 비교해주세요`;
+
 const TIMING_REJECTION_PREFIX = `🚫 **투자 시점 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다.**
 
 대신 판단에 도움이 될 **객관적인 데이터**를 제공해 드리겠습니다.
@@ -406,11 +509,29 @@ export async function POST(request: NextRequest) {
 
   const userMessage = messages[messages.length - 1].content;
 
+  // === 가드레일 1: 도메인 외 질문 즉시 차단 (API 호출 없이) ===
+  if (!isETFRelatedQuestion(userMessage)) {
+    return Response.json({
+      response: DOMAIN_REJECTION_RESPONSE,
+      agent: {
+        type: "consultant",
+        name: "상담 에이전트",
+      },
+      steps: [
+        "🤖 에이전트 라우팅 → 상담 에이전트 (ETF 상품 정보를 안내하고 투자자의 기본적인 질문에 답변합니다.)",
+        "🛡️ 도메인 검증 → ETF/금융 관련 질문이 아님 감지",
+        "🚫 도메인 외 질문 차단 → MCP 도구 호출 생략",
+        "✅ 안내 응답 생성 완료",
+      ],
+      toolCallCount: 0,
+    });
+  }
+
   // 1. 에이전트 라우팅
   const agentType: AgentType = classifyIntent(userMessage);
   const agent = AGENTS[agentType];
 
-  // 투자 시점 판단 질문 감지
+  // === 가드레일 2: 투자 시점 판단 질문 감지 ===
   const isTimingQuestion = isInvestmentTimingQuestion(userMessage);
 
   // 에이전트가 사용할 도구 필터링
@@ -421,7 +542,7 @@ export async function POST(request: NextRequest) {
   // OpenAI function format으로 변환
   const openaiTools = agentTools.length > 0 ? convertToolsToOpenAI(agentTools) : undefined;
 
-  // 2. 대화 히스토리 구성
+  // 2. 대화 히스토리 구성 (슬롯 필링 2차 응답을 위해 충분히 전달)
   const history = (conversationHistory || []).slice(-10).map((m: ChatMessage) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
@@ -435,17 +556,45 @@ export async function POST(request: NextRequest) {
   );
   allSteps.push(`🔧 모델: ${modelLabel}`);
 
-  // 투자 시점 질문일 경우 추가 가드레일 시스템 메시지 삽입
-  const timingGuardrailMessage = isTimingQuestion
-    ? `\n\n[최우선 지시] 사용자가 투자 시점/매수/매도 판단을 요청하고 있습니다. 반드시 응답 첫 문장에서 "투자 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다." 라고 명확히 거절한 후, "대신 판단에 도움이 될 객관적인 데이터를 제공해 드리겠습니다."로 전환하세요. 절대 "사세요", "좋은 시점입니다", "들어가셔도 됩니다" 같은 표현을 사용하지 마세요.`
-    : "";
+  // 시나리오별 추가 시스템 메시지 구성
+  let additionalSystemMessage = "";
 
+  // 투자 시점 질문일 경우 거절 가드레일
   if (isTimingQuestion) {
+    additionalSystemMessage += `\n\n[최우선 지시] 사용자가 투자 시점/매수/매도 판단을 요청하고 있습니다. 반드시 응답 첫 문장에서 "투자 판단은 투자자 본인의 결정 영역이므로, 구체적인 매수/매도 권유는 드리기 어렵습니다." 라고 명확히 거절한 후, "대신 판단에 도움이 될 객관적인 데이터를 제공해 드리겠습니다."로 전환하세요. 절대 "사세요", "좋은 시점입니다", "들어가셔도 됩니다" 같은 표현을 사용하지 마세요. 거절 후 MCP 도구를 사용하여 해당 ETF의 수익률, 시장 동향, 뉴스 등 객관적 데이터를 제공하세요.`;
     allSteps.push("🛡️ 투자 시점 판단 질문 감지 → 거절 가드레일 활성화");
   }
 
+  // 대화 맥락이 있는 경우 (슬롯 필링 2차 응답 등) 추가 지시
+  if (history.length > 0) {
+    const lastAssistantMsg = [...history].reverse().find(m => m.role === "assistant");
+    if (lastAssistantMsg && (
+      lastAssistantMsg.content.includes("여쭤볼게요") ||
+      lastAssistantMsg.content.includes("찾으시나요") ||
+      lastAssistantMsg.content.includes("어떠신가요") ||
+      lastAssistantMsg.content.includes("알려주세요")
+    )) {
+      additionalSystemMessage += `\n\n[슬롯 필링 후속] 이전 대화에서 사용자에게 되물었고, 사용자가 추가 정보를 제공했습니다. 이제 해당 조건에 맞게 MCP 도구를 사용하여 정확한 데이터를 조회하고 테이블+차트와 함께 답변하세요. 더 이상 되묻지 말고 바로 결과를 제공하세요.`;
+      allSteps.push("🎯 슬롯 필링 완료 → 조건 기반 검색 시작");
+    }
+  }
+
+  // 포트폴리오 진단 시나리오 감지
+  const isPortfolioDiagnosis = userMessage.includes("갖고 있") || userMessage.includes("보유") || userMessage.includes("내 포트폴리오");
+  if (isPortfolioDiagnosis) {
+    additionalSystemMessage += `\n\n[포트폴리오 진단 모드] 사용자가 보유 종목을 언급했습니다. 반드시 아래 순서로 도구를 호출하세요:
+1. search_etf_products로 각 종목 검색
+2. get_etf_detail로 각 종목 상세 조회
+3. get_etf_performance로 각 종목 수익률+가격 데이터 조회
+4. compare_etfs로 전체 비교
+5. recommend_etf로 부족한 영역 보완 ETF 추천
+
+응답 형식은 반드시: 1️⃣보유종목현황(테이블) → 2️⃣상관관계분석 → 3️⃣분산효과진단(🟢🟡🔴) → 4️⃣리밸런싱제안 순서로 작성하세요. 이 응답은 1200자까지 길게 작성해도 됩니다.`;
+    allSteps.push("📋 포트폴리오 진단 모드 활성화 → 다중 도구 병렬 호출");
+  }
+
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: agent.systemPrompt + timingGuardrailMessage },
+    { role: "system", content: agent.systemPrompt + additionalSystemMessage },
     ...history,
     { role: "user", content: userMessage },
   ];

@@ -916,76 +916,58 @@ export async function POST(request: NextRequest) {
     const naverPrice = naverPrices.get(ticker);
     const dailyData = (kisDaily[ti] || []) as Awaited<ReturnType<typeof getKISDailyPrices>>;
 
-    if (detail) {
-      allSteps.push(`🔍 MCP Server [ETF상세] ${detail.name}(${ticker}) 조회 완료`);
-      toolCallCount++;
+    // 종목명: 네이버 > DB > 티커
+    const etfName = naverPrice?.name || detail?.name || ticker;
 
-      // 일봉 차트 (KIS 실데이터 우선, 없으면 더미 폴백)
-      const chartHistory = dailyData.length >= 10
-        ? dailyData.map((d) => ({ date: d.date, price: d.close }))
-        : (detail.priceHistory || []);
+    allSteps.push(`🔍 ETF 조회: ${etfName}(${ticker})`);
+    toolCallCount++;
 
-      if (dailyData.length >= 10) {
-        allSteps.push(`📡 한국투자증권 API [일봉] ${detail.name}: 실제 ${dailyData.length}일치`);
-      }
-
-      if (chartHistory.length > 0) {
-        allCharts.push({
-          type: "performance" as const,
-          data: { ticker, name: detail.name, priceHistory: chartHistory },
-        });
-      }
-
-      // 실시간 시세 (네이버 우선) — 네이버 데이터로 AUM·시총 덮어씌우기
-      const realAUM = naverPrice?.marketCap || detail.aum;
-      const realName = naverPrice?.name || detail.name;
-
-      let liveBlock = "";
-      if (naverPrice && naverPrice.price > 0) {
-        allSteps.push(`📡 네이버금융 [실시간] ${realName}: ${naverPrice.price.toLocaleString()}원 (${naverPrice.changeRate >= 0 ? "+" : ""}${naverPrice.changeRate}%)`);
-        liveBlock = `[실시간·네이버금융] 현재가:${naverPrice.price}원, 등락:${naverPrice.change}원(${naverPrice.changeRate}%), 거래량:${naverPrice.volume}주, 시가총액:${naverPrice.marketCap}억원, NAV:${naverPrice.nav}원`;
-      } else {
-        const kisPrice = await getKISPrice(ticker).catch(() => null);
-        if (kisPrice && kisPrice.price > 0) {
-          allSteps.push(`📡 KIS [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원`);
-          liveBlock = `[실시간·KIS] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%)`;
-        }
-      }
-
-      // 수익률 + 리스크: KIS 일봉에서 코드로 계산 (LLM 생성 절대 금지)
-      const calc = calculateReturnsFromDaily(dailyData);
-      const returnParts: string[] = [];
-      if (calc.return1M !== null) returnParts.push(`1M:${calc.return1M}%`);
-      if (calc.return3M !== null) returnParts.push(`3M:${calc.return3M}%`);
-      if (calc.return6M !== null) returnParts.push(`6M:${calc.return6M}%`);
-      if (calc.return1Y !== null) returnParts.push(`1Y:${calc.return1Y}%`);
-
-      const riskParts: string[] = [];
-      if (calc.mdd !== null) riskParts.push(`MDD:${calc.mdd}%`);
-      if (calc.volatility !== null) riskParts.push(`변동성(연환산):${calc.volatility}%`);
-      if (calc.sharpe !== null) riskParts.push(`샤프비율:${calc.sharpe}`);
-
-      if (returnParts.length > 0) {
-        allSteps.push(`📊 수익률+리스크 계산 [KIS ${calc.dataPoints}일봉] ${detail.name}`);
-      }
-
-      // [API] = 외부 소스 팩트, [코드계산] = 서버 코드로 산출
-      prefetchedData.push(
-        `[${realName}(${ticker})]` +
-        `\n  [API] 카테고리: ${detail.category}` +
-        `\n  [API] 운용보수: ${detail.fee}%` +
-        `\n  [API] 시가총액(AUM): ${realAUM.toLocaleString()}억원` +
-        (returnParts.length > 0
-          ? `\n  [코드계산] 수익률: ${returnParts.join(", ")} (${calc.periodStart}~${calc.periodEnd}, ${calc.dataPoints}일 기준)`
-          : (naverPrice?.threeMonthReturn ? `\n  [API] 수익률: 3M:${naverPrice.threeMonthReturn}%` : "\n  수익률: 조회 불가")) +
-        (riskParts.length > 0
-          ? `\n  [코드계산] 리스크: ${riskParts.join(", ")} (${calc.dataPoints}일 기준)`
-          : "") +
-        (liveBlock ? `\n  ${liveBlock}` : "")
-      );
-    } else {
-      allSteps.push(`❌ ${ticker} 종목 조회 실패`);
+    // 일봉 차트 (KIS 실데이터만, 더미 폴백 없음)
+    if (dailyData.length >= 10) {
+      allSteps.push(`📡 KIS [일봉] ${etfName}: 실제 ${dailyData.length}일치`);
+      allCharts.push({
+        type: "performance" as const,
+        data: { ticker, name: etfName, priceHistory: dailyData.map((d) => ({ date: d.date, price: d.close })) },
+      });
     }
+
+    // 수익률 + 리스크: KIS 일봉에서 코드로 계산
+    const calc = calculateReturnsFromDaily(dailyData);
+    const returnParts: string[] = [];
+    if (calc.return1M !== null) returnParts.push(`1M:${calc.return1M}%`);
+    if (calc.return3M !== null) returnParts.push(`3M:${calc.return3M}%`);
+    if (calc.return6M !== null) returnParts.push(`6M:${calc.return6M}%`);
+    if (calc.return1Y !== null) returnParts.push(`1Y:${calc.return1Y}%`);
+    const riskParts: string[] = [];
+    if (calc.mdd !== null) riskParts.push(`MDD:${calc.mdd}%`);
+    if (calc.volatility !== null) riskParts.push(`변동성:${calc.volatility}%`);
+    if (calc.sharpe !== null) riskParts.push(`샤프:${calc.sharpe}`);
+
+    // prefetchedData: 네이버/KIS API 데이터만 포함, 정적 DB 수치 절대 불포함
+    const lines: string[] = [`[${etfName}(${ticker})]`];
+    if (detail) lines.push(`  [DB] 카테고리: ${detail.category}, 운용보수: ${detail.fee}%`);
+
+    if (naverPrice && naverPrice.price > 0) {
+      allSteps.push(`📡 네이버금융 [실시간] ${etfName}: ${naverPrice.price.toLocaleString()}원 (${naverPrice.changeRate >= 0 ? "+" : ""}${naverPrice.changeRate}%)`);
+      lines.push(`  [API·네이버금융] 현재가: ${naverPrice.price.toLocaleString()}원, 등락: ${naverPrice.change}원(${naverPrice.changeRate}%), 거래량: ${naverPrice.volume.toLocaleString()}주, 시가총액: ${naverPrice.marketCap.toLocaleString()}억원, NAV: ${naverPrice.nav.toLocaleString()}원`);
+    } else {
+      lines.push("  현재가: 조회 불가 (네이버 API 미응답)");
+    }
+
+    if (returnParts.length > 0) {
+      lines.push(`  [코드계산] 수익률: ${returnParts.join(", ")} (${calc.periodStart}~${calc.periodEnd}, ${calc.dataPoints}일)`);
+      allSteps.push(`📊 수익률 계산 [${calc.dataPoints}일봉] ${etfName}`);
+    } else if (naverPrice?.threeMonthReturn) {
+      lines.push(`  [API·네이버] 3M수익률: ${naverPrice.threeMonthReturn}%`);
+    } else {
+      lines.push("  수익률: 조회 불가");
+    }
+
+    if (riskParts.length > 0) {
+      lines.push(`  [코드계산] 리스크: ${riskParts.join(", ")} (${calc.dataPoints}일)`);
+    }
+
+    prefetchedData.push(lines.join("\n"));
   }
 
   // 3단계: 비교 (2개 이상 티커)

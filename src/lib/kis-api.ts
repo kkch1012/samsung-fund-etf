@@ -10,6 +10,12 @@ function fetchWithTimeout(url: string, options: RequestInit, ms = KIS_TIMEOUT): 
 }
 
 async function getAccessToken(): Promise<string> {
+  // 1) 환경변수에 토큰이 직접 설정되어 있으면 그것을 사용 (서버리스 안정성)
+  if (process.env.KIS_ACCESS_TOKEN) {
+    return process.env.KIS_ACCESS_TOKEN;
+  }
+
+  // 2) 메모리 캐시
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
   }

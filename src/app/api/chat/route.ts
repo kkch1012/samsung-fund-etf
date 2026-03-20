@@ -952,30 +952,35 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 수익률: KIS 일봉에서 코드로 계산 (LLM 생성 절대 금지)
-      const calcReturns = calculateReturnsFromDaily(dailyData);
-      let returnNote = "";
-      if (calcReturns.return1M !== null || calcReturns.return3M !== null) {
-        const parts = [];
-        if (calcReturns.return1M !== null) parts.push(`1M:${calcReturns.return1M}%`);
-        if (calcReturns.return3M !== null) parts.push(`3M:${calcReturns.return3M}%`);
-        if (calcReturns.return6M !== null) parts.push(`6M:${calcReturns.return6M}%`);
-        if (calcReturns.return1Y !== null) parts.push(`1Y:${calcReturns.return1Y}%`);
-        returnNote = `수익률(KIS일봉계산): ${parts.join(", ")}`;
-        allSteps.push(`📊 수익률 계산 [KIS일봉] ${detail.name}: ${parts.join(", ")}`);
-      } else if (naverPrice?.threeMonthReturn) {
-        returnNote = `수익률(네이버): 3M:${naverPrice.threeMonthReturn}%`;
-      } else {
-        returnNote = "수익률: 조회 불가";
+      // 수익률 + 리스크: KIS 일봉에서 코드로 계산 (LLM 생성 절대 금지)
+      const calc = calculateReturnsFromDaily(dailyData);
+      const returnParts: string[] = [];
+      if (calc.return1M !== null) returnParts.push(`1M:${calc.return1M}%`);
+      if (calc.return3M !== null) returnParts.push(`3M:${calc.return3M}%`);
+      if (calc.return6M !== null) returnParts.push(`6M:${calc.return6M}%`);
+      if (calc.return1Y !== null) returnParts.push(`1Y:${calc.return1Y}%`);
+
+      const riskParts: string[] = [];
+      if (calc.mdd !== null) riskParts.push(`MDD:${calc.mdd}%`);
+      if (calc.volatility !== null) riskParts.push(`변동성(연환산):${calc.volatility}%`);
+      if (calc.sharpe !== null) riskParts.push(`샤프비율:${calc.sharpe}`);
+
+      if (returnParts.length > 0) {
+        allSteps.push(`📊 수익률+리스크 계산 [KIS ${calc.dataPoints}일봉] ${detail.name}`);
       }
 
+      // [API] = 외부 소스 팩트, [코드계산] = 서버 코드로 산출
       prefetchedData.push(
         `[${realName}(${ticker})]` +
-        `\n  카테고리: ${detail.category}` +
-        `\n  운용보수: ${detail.fee}%` +
-        `\n  시가총액(AUM): ${realAUM.toLocaleString()}억원 (실시간)` +
-        `\n  ${returnNote}` +
-        `\n  MDD: ${detail.mdd}%` +
+        `\n  [API] 카테고리: ${detail.category}` +
+        `\n  [API] 운용보수: ${detail.fee}%` +
+        `\n  [API] 시가총액(AUM): ${realAUM.toLocaleString()}억원` +
+        (returnParts.length > 0
+          ? `\n  [코드계산] 수익률: ${returnParts.join(", ")} (${calc.periodStart}~${calc.periodEnd}, ${calc.dataPoints}일 기준)`
+          : (naverPrice?.threeMonthReturn ? `\n  [API] 수익률: 3M:${naverPrice.threeMonthReturn}%` : "\n  수익률: 조회 불가")) +
+        (riskParts.length > 0
+          ? `\n  [코드계산] 리스크: ${riskParts.join(", ")} (${calc.dataPoints}일 기준)`
+          : "") +
         (liveBlock ? `\n  ${liveBlock}` : "")
       );
     } else {
@@ -1026,6 +1031,12 @@ data_timestamp: ${now.toISOString()}
 ⛔ [DATA]에 없는 ETF·가격·수익률·AUM을 절대 만들지 마세요.
 ⛔ null 값은 "조회 불가"로 표시하세요.
 ⛔ 원시 텍스트를 그대로 출력하지 말고 자연어 테이블로 정리하세요.
+
+데이터 출처 태그:
+- [API] = 외부 API에서 가져온 팩트 (현재가, 시총, 보수 등)
+- [코드계산] = 서버 코드가 일봉 데이터로 산출한 수치 (수익률, MDD, 변동성, 샤프)
+- [분석] = 당신(AI)이 데이터를 해석한 의견
+답변에서 각 수치 뒤에 출처를 표기하세요. 예: "1년 수익률 +204.23% [코드계산]"
 
 ${prefetchedData.join("\n")}`,
     });

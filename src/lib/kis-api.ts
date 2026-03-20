@@ -175,46 +175,85 @@ export async function getKISDailyPrices(
   }
 }
 
-/** 일봉 데이터에서 기간별 수익률을 코드로 계산 */
-export interface CalculatedReturns {
+/** 일봉 데이터에서 수익률 + 리스크 지표를 코드로 계산 */
+export interface CalculatedMetrics {
   return1M: number | null;
   return3M: number | null;
   return6M: number | null;
   return1Y: number | null;
-  source: "KIS_일봉_계산";
+  mdd: number | null;           // 최대낙폭 (%)
+  volatility: number | null;    // 연환산 변동성 (%)
+  sharpe: number | null;        // 샤프비율 (무위험 3.5% 가정)
+  dataPoints: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+  source: "KIS_일봉_코드계산";
 }
 
-export function calculateReturnsFromDaily(daily: KISDailyPrice[]): CalculatedReturns {
-  if (daily.length < 2) {
-    return { return1M: null, return3M: null, return6M: null, return1Y: null, source: "KIS_일봉_계산" };
-  }
+export function calculateReturnsFromDaily(daily: KISDailyPrice[]): CalculatedMetrics {
+  const empty: CalculatedMetrics = {
+    return1M: null, return3M: null, return6M: null, return1Y: null,
+    mdd: null, volatility: null, sharpe: null,
+    dataPoints: daily.length,
+    periodStart: daily[0]?.date || null,
+    periodEnd: daily[daily.length - 1]?.date || null,
+    source: "KIS_일봉_코드계산",
+  };
+  if (daily.length < 5) return empty;
 
   const latest = daily[daily.length - 1];
   const latestDate = new Date(latest.date);
 
+  // --- 수익률 ---
   function findClosestPrice(monthsAgo: number): number | null {
     const target = new Date(latestDate);
     target.setMonth(target.getMonth() - monthsAgo);
-    const targetStr = target.toISOString().slice(0, 10);
-
     let closest: KISDailyPrice | null = null;
     let minDiff = Infinity;
     for (const d of daily) {
-      const diff = Math.abs(new Date(d.date).getTime() - new Date(targetStr).getTime());
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = d;
-      }
+      const diff = Math.abs(new Date(d.date).getTime() - target.getTime());
+      if (diff < minDiff) { minDiff = diff; closest = d; }
     }
-    // 30일 이상 차이나면 null
-    if (!closest || minDiff > 30 * 24 * 60 * 60 * 1000) return null;
+    if (!closest || minDiff > 30 * 86400000) return null;
     return closest.close;
   }
 
-  function calcReturn(monthsAgo: number): number | null {
-    const pastPrice = findClosestPrice(monthsAgo);
-    if (!pastPrice || pastPrice === 0) return null;
-    return Math.round(((latest.close - pastPrice) / pastPrice) * 10000) / 100;
+  function calcReturn(months: number): number | null {
+    const past = findClosestPrice(months);
+    if (!past || past === 0) return null;
+    return Math.round(((latest.close - past) / past) * 10000) / 100;
+  }
+
+  // --- MDD: Math.min(...drawdowns) ---
+  let peak = daily[0].close;
+  let maxDrawdown = 0;
+  for (const d of daily) {
+    if (d.close > peak) peak = d.close;
+    const dd = (d.close - peak) / peak;
+    if (dd < maxDrawdown) maxDrawdown = dd;
+  }
+
+  // --- 변동성: 일간수익률 표준편차 × √252 ---
+  const dailyReturns: number[] = [];
+  for (let i = 1; i < daily.length; i++) {
+    if (daily[i - 1].close > 0) {
+      dailyReturns.push((daily[i].close - daily[i - 1].close) / daily[i - 1].close);
+    }
+  }
+
+  let vol: number | null = null;
+  let sharpeRatio: number | null = null;
+  if (dailyReturns.length >= 20) {
+    const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+    const variance = dailyReturns.reduce((a, r) => a + (r - mean) ** 2, 0) / dailyReturns.length;
+    const dailyStd = Math.sqrt(variance);
+    vol = Math.round(dailyStd * Math.sqrt(252) * 10000) / 100;
+
+    const annualReturn = mean * 252;
+    const annualVol = dailyStd * Math.sqrt(252);
+    if (annualVol > 0) {
+      sharpeRatio = Math.round(((annualReturn - 0.035) / annualVol) * 100) / 100;
+    }
   }
 
   return {
@@ -222,6 +261,12 @@ export function calculateReturnsFromDaily(daily: KISDailyPrice[]): CalculatedRet
     return3M: calcReturn(3),
     return6M: calcReturn(6),
     return1Y: calcReturn(12),
-    source: "KIS_일봉_계산",
+    mdd: Math.round(maxDrawdown * 10000) / 100,
+    volatility: vol,
+    sharpe: sharpeRatio,
+    dataPoints: daily.length,
+    periodStart: daily[0].date,
+    periodEnd: latest.date,
+    source: "KIS_일봉_코드계산",
   };
 }

@@ -853,15 +853,13 @@ export async function POST(request: NextRequest) {
     if (userMessage.toLowerCase().includes(kw.toLowerCase())) searchKeywords.push(kw);
   }
 
-  // 1단계: 검색 (키워드가 있으면)
+  // 1단계: 검색 (키워드가 있으면) — 검색은 티커 추출 목적만, 상세는 2단계에서
   const uniqueKws = [...new Set(searchKeywords)].slice(0, 3);
   for (const kw of uniqueKws) {
-    const { result, steps, } = executeTool("search_etf_products", { query: kw });
+    const { result, steps } = executeTool("search_etf_products", { query: kw });
     allSteps.push(...steps);
     toolCallCount++;
-    prefetchedData.push(`[검색 "${kw}"] ${JSON.stringify(result)}`);
-    // 검색 결과에서 상위 티커 추출
-    const arr = result as { ticker: string }[];
+    const arr = result as { ticker: string; name: string }[];
     if (Array.isArray(arr)) {
       for (const item of arr.slice(0, 2)) {
         if (item.ticker && !mentionedTickers.includes(item.ticker)) {
@@ -913,24 +911,32 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // 실시간 시세 (네이버 우선, KIS 보조)
-      let priceInfo = "";
+      // 실시간 시세 (네이버 우선) — 네이버 데이터로 AUM·시총 덮어씌우기
+      const realAUM = naverPrice?.marketCap || detail.aum;
+      const realName = naverPrice?.name || detail.name;
+
+      let liveBlock = "";
       if (naverPrice && naverPrice.price > 0) {
-        allSteps.push(`📡 네이버금융 [실시간] ${naverPrice.name}: ${naverPrice.price.toLocaleString()}원 (${naverPrice.changeRate >= 0 ? "+" : ""}${naverPrice.changeRate}%)`);
-        priceInfo = `[실시간시세·네이버금융] 현재가:${naverPrice.price}원, 등락:${naverPrice.change}원(${naverPrice.changeRate}%), 거래량:${naverPrice.volume}주, 시총:${naverPrice.marketCap}억원`;
+        allSteps.push(`📡 네이버금융 [실시간] ${realName}: ${naverPrice.price.toLocaleString()}원 (${naverPrice.changeRate >= 0 ? "+" : ""}${naverPrice.changeRate}%)`);
+        liveBlock = `[실시간·네이버금융] 현재가:${naverPrice.price}원, 등락:${naverPrice.change}원(${naverPrice.changeRate}%), 거래량:${naverPrice.volume}주, 시가총액:${naverPrice.marketCap}억원, NAV:${naverPrice.nav}원`;
       } else {
-        // KIS 폴백
         const kisPrice = await getKISPrice(ticker).catch(() => null);
         if (kisPrice && kisPrice.price > 0) {
-          allSteps.push(`📡 한국투자증권 API [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원`);
-          priceInfo = `[실시간시세·KIS] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}주`;
+          allSteps.push(`📡 KIS [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원`);
+          liveBlock = `[실시간·KIS] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%)`;
         }
       }
 
+      // 수익률은 일봉이 있으면 직접 계산
+      let returnNote = `1M:${detail.return1M}%, 3M:${detail.return3M}%, 6M:${detail.return6M}%, 1Y:${detail.return1Y}%`;
+      if (naverPrice?.threeMonthReturn) {
+        returnNote = `3M(실시간):${naverPrice.threeMonthReturn}%, 1Y(DB):${detail.return1Y}% ※1Y는 DB 기준, 실제와 차이 가능`;
+      }
+
       prefetchedData.push(
-        `[${detail.name}(${ticker})] 카테고리:${detail.category}, 보수:${detail.fee}%, AUM:${detail.aum}억원, ` +
-        `1M:${detail.return1M}%, 3M:${detail.return3M}%, 6M:${detail.return6M}%, 1Y:${detail.return1Y}%, MDD:${detail.mdd}% ` +
-        priceInfo
+        `[${realName}(${ticker})] 카테고리:${detail.category}, 보수:${detail.fee}%, ` +
+        `시가총액(실시간):${realAUM}억원, ${returnNote}, MDD:${detail.mdd}% ` +
+        liveBlock
       );
     } else {
       allSteps.push(`❌ ${ticker} 종목 조회 실패`);
@@ -967,12 +973,15 @@ export async function POST(request: NextRequest) {
   ];
 
   if (prefetchedData.length > 0) {
-    const hasLive = prefetchedData.some((d) => d.includes("[실시간시세]"));
+    const hasLive = prefetchedData.some((d) => d.includes("[실시간"));
     openaiMessages.push({
       role: "system",
-      content: `[MCP 도구 + 한국투자증권 API 조회 결과]
-- 원시 JSON을 그대로 출력하지 마세요. 자연어 테이블로 정리하세요.
-${hasLive ? "- [실시간시세] 태그가 있는 데이터는 **한국투자증권 실시간 API에서 가져온 장중 현재가**입니다. 답변에 '실시간 현재가 기준'임을 명시하세요." : ""}
+      content: `[실시간 조회 데이터 — 이 데이터만 사용하세요]
+- 원시 텍스트를 그대로 출력하지 말고 자연어 테이블로 정리하세요.
+- "시가총액(실시간)" 값을 AUM/순자산으로 표기하세요.
+- "3M(실시간)" 값이 있으면 DB 수익률보다 우선 사용하세요.
+${hasLive ? "- [실시간·네이버금융] 데이터는 **장중 실시간**입니다. 답변에 '실시간 기준'임을 명시하세요." : "- 실시간 데이터를 가져오지 못했습니다. DB 기준 데이터임을 명시하세요."}
+- **데이터에 없는 수치를 만들지 마세요.**
 ${prefetchedData.join("\n")}`,
     });
   }

@@ -13,7 +13,7 @@ import {
   type ETFProduct,
 } from "@/lib/etf-data";
 import { getKISPrice, getKISDailyPrices, calculateReturnsFromDaily } from "@/lib/kis-api";
-import { getNaverETFPrices } from "@/lib/naver-finance";
+import { getNaverETFPrices, searchNaverETF } from "@/lib/naver-finance";
 import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
 export const maxDuration = 30;
@@ -842,7 +842,7 @@ export async function POST(request: NextRequest) {
   const tickerMatches = userMessage.match(/\b\d{6}\b/g);
   if (tickerMatches) mentionedTickers.push(...tickerMatches);
 
-  // KODEX 이름으로 검색할 키워드 추출
+  // 키워드 추출 (ETF 이름, 섹터, 일반 검색어)
   const searchKeywords: string[] = [];
   const kodexNameMatch = userMessage.match(/KODEX\s+([^\s,]+(?:\s*[^\s,]+)?)/gi);
   if (kodexNameMatch) {
@@ -851,49 +851,49 @@ export async function POST(request: NextRequest) {
       if (kw.length >= 2) searchKeywords.push(kw);
     }
   }
-  // 일반 키워드 (반도체, 배당 등)
-  const sectorKws = ["반도체", "2차전지", "배터리", "바이오", "배당", "채권", "금리", "원자재", "금", "S&P500", "나스닥", "레버리지", "인버스"];
+  // 일반 키워드
+  const sectorKws = ["반도체", "2차전지", "배터리", "바이오", "배당", "채권", "금리", "원자재", "금", "S&P500", "나스닥", "레버리지", "인버스", "로봇", "AI", "클라우드", "전력", "방산", "헬스케어", "자동차", "은행", "보험", "미국", "중국", "일본", "인도"];
   for (const kw of sectorKws) {
     if (userMessage.toLowerCase().includes(kw.toLowerCase())) searchKeywords.push(kw);
   }
-
-  // 1단계: 검색 → 네이버 실시간 시세 즉시 병합
-  const uniqueKws = [...new Set(searchKeywords)].slice(0, 3);
-  const searchResultTickers: string[] = [];
-  for (const kw of uniqueKws) {
-    const { result, steps } = executeTool("search_etf_products", { query: kw });
-    allSteps.push(...steps);
-    toolCallCount++;
-    const arr = result as { ticker: string; name: string; fee: number; category: string }[];
-    if (Array.isArray(arr)) {
-      for (const item of arr.slice(0, 5)) {
-        searchResultTickers.push(item.ticker);
-      }
-      for (const item of arr.slice(0, 2)) {
-        if (item.ticker && !mentionedTickers.includes(item.ticker)) {
-          mentionedTickers.push(item.ticker);
-        }
+  // 일반적인 한글 명사도 추출 (2글자 이상)
+  const generalKw = userMessage.match(/[가-힣]{2,6}/g);
+  if (generalKw && searchKeywords.length === 0 && mentionedTickers.length === 0) {
+    for (const kw of generalKw.slice(0, 2)) {
+      if (!["알려줘", "어떤", "현재가", "시가총액", "수익률", "정보", "분석", "가격"].includes(kw)) {
+        searchKeywords.push(kw);
       }
     }
   }
 
-  // 검색 결과 전체에 네이버 실시간 시세 병합
-  if (searchResultTickers.length > 0) {
-    const searchNaverPrices = await raceTimeout(
-      getNaverETFPrices(searchResultTickers), new Map(), 3000
-    );
-    if (searchNaverPrices.size > 0) {
-      allSteps.push(`📡 네이버금융 [검색결과 실시간] ${searchNaverPrices.size}개 종목 시세 조회`);
+  // 1단계: 네이버 금융 API에서 직접 검색 (1080개 전체 ETF 대상)
+  const uniqueKws = [...new Set(searchKeywords)].slice(0, 3);
+  for (const kw of uniqueKws) {
+    const naverResults = await raceTimeout(searchNaverETF(kw, 5), [], 3000);
+    if (naverResults.length > 0) {
+      allSteps.push(`📡 네이버금융 [검색] "${kw}" → ${naverResults.length}개 매칭`);
+      toolCallCount++;
       const rows: string[] = [];
-      for (const ticker of searchResultTickers) {
-        const np = searchNaverPrices.get(ticker);
-        const detail = getETFDetail(ticker);
-        if (np && np.price > 0) {
-          rows.push(`${np.name}(${ticker}): 현재가=${np.price.toLocaleString()}원, 등락=${np.changeRate}%, 거래량=${np.volume.toLocaleString()}주, 시총=${np.marketCap.toLocaleString()}억원, 보수=${detail?.fee || "?"}%`);
+      for (const np of naverResults) {
+        if (!mentionedTickers.includes(np.ticker)) {
+          mentionedTickers.push(np.ticker);
         }
+        const detail = getETFDetail(np.ticker);
+        rows.push(`${np.name}(${np.ticker}): 현재가=${np.price.toLocaleString()}원, 등락=${np.changeRate}%, 시총=${np.marketCap.toLocaleString()}억원, 거래량=${np.volume.toLocaleString()}주${detail ? `, 보수=${detail.fee}%` : ""}`);
       }
-      if (rows.length > 0) {
-        prefetchedData.push(`[검색결과 실시간시세]\n${rows.join("\n")}`);
+      prefetchedData.push(`[네이버 검색결과 "${kw}"]\n${rows.join("\n")}`);
+    } else {
+      // 네이버에 없으면 DB 폴백
+      const { result, steps } = executeTool("search_etf_products", { query: kw });
+      allSteps.push(...steps);
+      toolCallCount++;
+      const arr = result as { ticker: string }[];
+      if (Array.isArray(arr)) {
+        for (const item of arr.slice(0, 2)) {
+          if (item.ticker && !mentionedTickers.includes(item.ticker)) {
+            mentionedTickers.push(item.ticker);
+          }
+        }
       }
     }
   }

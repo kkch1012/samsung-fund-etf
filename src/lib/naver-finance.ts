@@ -68,6 +68,20 @@ export async function getNaverETFPrice(ticker: string): Promise<NaverETFPrice | 
   return map.get(ticker) || null;
 }
 
+/** 네이버 전체 ETF에서 키워드 검색 (이름 매칭) */
+export async function searchNaverETF(keyword: string, limit = 5): Promise<NaverETFPrice[]> {
+  const map = await fetchAllETF();
+  const kw = keyword.toLowerCase();
+  const results: NaverETFPrice[] = [];
+  for (const [, etf] of map) {
+    if (etf.name.toLowerCase().includes(kw) || etf.ticker.includes(kw)) {
+      results.push(etf);
+    }
+  }
+  results.sort((a, b) => b.marketCap - a.marketCap);
+  return results.slice(0, limit);
+}
+
 export async function getNaverETFPrices(tickers: string[]): Promise<Map<string, NaverETFPrice>> {
   const map = await fetchAllETF();
   const result = new Map<string, NaverETFPrice>();

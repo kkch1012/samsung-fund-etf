@@ -835,6 +835,10 @@ export async function POST(request: NextRequest) {
 
   // 메시지에서 ETF 키워드/티커 추출
   const mentionedTickers: string[] = [];
+  // 타임아웃 유틸
+  const raceTimeout = <T>(p: Promise<T>, fallback: T, ms = 4000): Promise<T> =>
+    Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+
   const tickerMatches = userMessage.match(/\b\d{6}\b/g);
   if (tickerMatches) mentionedTickers.push(...tickerMatches);
 
@@ -853,14 +857,18 @@ export async function POST(request: NextRequest) {
     if (userMessage.toLowerCase().includes(kw.toLowerCase())) searchKeywords.push(kw);
   }
 
-  // 1단계: 검색 (키워드가 있으면) — 검색은 티커 추출 목적만, 상세는 2단계에서
+  // 1단계: 검색 → 네이버 실시간 시세 즉시 병합
   const uniqueKws = [...new Set(searchKeywords)].slice(0, 3);
+  const searchResultTickers: string[] = [];
   for (const kw of uniqueKws) {
     const { result, steps } = executeTool("search_etf_products", { query: kw });
     allSteps.push(...steps);
     toolCallCount++;
-    const arr = result as { ticker: string; name: string }[];
+    const arr = result as { ticker: string; name: string; fee: number; category: string }[];
     if (Array.isArray(arr)) {
+      for (const item of arr.slice(0, 5)) {
+        searchResultTickers.push(item.ticker);
+      }
       for (const item of arr.slice(0, 2)) {
         if (item.ticker && !mentionedTickers.includes(item.ticker)) {
           mentionedTickers.push(item.ticker);
@@ -869,12 +877,29 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // 검색 결과 전체에 네이버 실시간 시세 병합
+  if (searchResultTickers.length > 0) {
+    const searchNaverPrices = await raceTimeout(
+      getNaverETFPrices(searchResultTickers), new Map(), 3000
+    );
+    if (searchNaverPrices.size > 0) {
+      allSteps.push(`📡 네이버금융 [검색결과 실시간] ${searchNaverPrices.size}개 종목 시세 조회`);
+      const rows: string[] = [];
+      for (const ticker of searchResultTickers) {
+        const np = searchNaverPrices.get(ticker);
+        const detail = getETFDetail(ticker);
+        if (np && np.price > 0) {
+          rows.push(`${np.name}(${ticker}): 현재가=${np.price.toLocaleString()}원, 등락=${np.changeRate}%, 거래량=${np.volume.toLocaleString()}주, 시총=${np.marketCap.toLocaleString()}억원, 보수=${detail?.fee || "?"}%`);
+        }
+      }
+      if (rows.length > 0) {
+        prefetchedData.push(`[검색결과 실시간시세]\n${rows.join("\n")}`);
+      }
+    }
+  }
+
   // 2단계: 상세 + 실시간 시세(네이버+KIS) + 실제 일봉 차트
   const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
-
-  // 네이버 금융 (빠르고 안정, 토큰 불필요) + KIS 일봉 (차트용) 병렬 조회
-  const raceTimeout = <T>(p: Promise<T>, fallback: T, ms = 4000): Promise<T> =>
-    Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 
   const [naverPrices, kisDaily] = await Promise.all([
     raceTimeout(getNaverETFPrices(uniqueTickers), new Map(), 3000),

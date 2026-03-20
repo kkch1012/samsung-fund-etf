@@ -164,14 +164,31 @@ export default function PortfolioPage() {
     setAiLoading(true);
     setAiAnalysis(null);
 
+    // 네이버 실시간 시세 조회
+    let liveData = "";
+    try {
+      const tickers = portfolio.etfs.map((e) => e.ticker).join(",");
+      const naverRes = await fetch(`https://finance.naver.com/api/sise/etfItemList.nhn`);
+      const naverJson = await naverRes.json();
+      const allItems = naverJson?.result?.etfItemList || [];
+      const tickerSet = new Set(portfolio.etfs.map((e) => e.ticker));
+      const matched = allItems.filter((item: { itemcode: string }) => tickerSet.has(item.itemcode));
+      liveData = matched.map((item: { itemcode: string; itemname: string; nowVal: number; changeRate: number; marketSum: number; threeMonthEarnRate: number }) =>
+        `${item.itemname}(${item.itemcode}): 현재가=${item.nowVal?.toLocaleString()}원, 등락=${item.changeRate}%, 시총=${item.marketSum?.toLocaleString()}억원, 3M수익률=${item.threeMonthEarnRate}%`
+      ).join("\n");
+    } catch { /* 실패 시 정적 데이터 폴백 */ }
+
     const holdings = portfolio.etfs
-      .map((etf, i) => `${etf.name}(${etf.ticker}) ${weights[i]}%, 1Y수익률 ${etf.return1Y}%, 보수 ${etf.fee}%, MDD ${etf.mdd}%`)
+      .map((etf, i) => `${etf.name}(${etf.ticker}) 비중:${weights[i]}%, 보수:${etf.fee}%, MDD:${etf.mdd}%, 카테고리:${etf.category}`)
       .join("\n");
 
-    const prompt = `아래 포트폴리오(투자금 ${investAmount}만원)를 분석해줘. 도구 호출 없이 아래 데이터만으로 답변해:
+    const prompt = `아래 포트폴리오(투자금 ${investAmount}만원)를 분석해줘. 도구 호출 없이 아래 데이터만으로 답변해.
+[보유종목]
 ${holdings}
+${liveData ? `[네이버금융 실시간시세]\n${liveData}` : ""}
 
-분석 형식: 1️⃣ 종합 평가 2~3문장 → 2️⃣ 분산 진단(지역🟢🟡🔴, 섹터🟢🟡🔴, 자산군🟢🟡🔴) → 3️⃣ 리밸런싱 제안(비중% 예시). 500자 이내.`;
+분석 형식: 1️⃣ 종합 평가 2~3문장 → 2️⃣ 분산 진단(지역🟢🟡🔴, 섹터🟢🟡🔴, 자산군🟢🟡🔴) → 3️⃣ 리밸런싱 제안(비중% 예시). 500자 이내.
+⛔ 데이터에 없는 수치를 만들지 마세요.`;
 
     try {
       const res = await fetch("/api/chat", {

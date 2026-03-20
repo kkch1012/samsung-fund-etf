@@ -87,9 +87,9 @@ const FEATURES = [
 
 const STATS = [
   { label: "KODEX ETF", value: "230+", unit: "종목" },
-  { label: "투자설명서", value: "4", unit: "건" },
+  { label: "실시간 시세", value: "네이버+KIS", unit: "API" },
   { label: "MCP 도구", value: "8", unit: "개" },
-  { label: "평균 응답", value: "~10", unit: "초" },
+  { label: "평균 응답", value: "~3", unit: "초" },
 ];
 
 interface Props {

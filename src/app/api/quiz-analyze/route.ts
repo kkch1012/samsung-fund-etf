@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getNaverETFPrices } from "@/lib/naver-finance";
+import { getETFDetail } from "@/lib/etf-data";
 
 export const maxDuration = 30;
 
@@ -11,23 +13,10 @@ function getOpenAI() {
   });
 }
 
-// AI가 선택할 수 있는 KODEX ETF 풀 (실제 데이터)
-const ETF_POOL = [
-  { name: "KODEX CD금리액티브(합성)", ticker: "459580", return1Y: 2.69, return3Y: 0, fee: 0.02, mdd: 0, category: "금리" },
-  { name: "KODEX 머니마켓액티브", ticker: "488770", return1Y: 2.98, return3Y: 0, fee: 0.05, mdd: 0, category: "채권" },
-  { name: "KODEX 종합채권(AA-이상)액티브", ticker: "273130", return1Y: 5.12, return3Y: 2.34, fee: 0.05, mdd: -3.2, category: "채권" },
-  { name: "KODEX 200", ticker: "069500", return1Y: 12.45, return3Y: 8.67, fee: 0.15, mdd: -18.5, category: "국내주식" },
-  { name: "KODEX 배당가치", ticker: "290080", return1Y: 9.8, return3Y: 7.1, fee: 0.24, mdd: -15.2, category: "국내주식" },
-  { name: "KODEX 미국S&P500TR", ticker: "379800", return1Y: 24.8, return3Y: 15.2, fee: 0.05, mdd: -12.3, category: "해외주식" },
-  { name: "KODEX 미국나스닥100TR", ticker: "379810", return1Y: 32.5, return3Y: 18.4, fee: 0.05, mdd: -15.8, category: "해외주식" },
-  { name: "KODEX 반도체MV", ticker: "390390", return1Y: 28.7, return3Y: 22.1, fee: 0.45, mdd: -25.3, category: "테마" },
-  { name: "KODEX 2차전지산업", ticker: "305720", return1Y: -8.5, return3Y: -5.2, fee: 0.45, mdd: -45.1, category: "테마" },
-  { name: "KODEX 레버리지", ticker: "122630", return1Y: 22.3, return3Y: 12.8, fee: 0.64, mdd: -38.7, category: "레버리지" },
-  { name: "KODEX 코스닥150", ticker: "229200", return1Y: 5.3, return3Y: -2.1, fee: 0.19, mdd: -28.4, category: "국내주식" },
-  { name: "KODEX 미국빅테크10(H)", ticker: "463230", return1Y: 38.2, return3Y: 0, fee: 0.09, mdd: -18.2, category: "해외주식" },
-  { name: "KODEX 골드선물(H)", ticker: "132030", return1Y: 18.9, return3Y: 12.5, fee: 0.68, mdd: -10.5, category: "원자재" },
-  { name: "KODEX 인도Nifty50", ticker: "453810", return1Y: 15.3, return3Y: 0, fee: 0.19, mdd: -11.8, category: "해외주식" },
-  { name: "KODEX 미국30년국채울트라선물(H)", ticker: "453850", return1Y: -5.2, return3Y: 0, fee: 0.05, mdd: -22.1, category: "채권" },
+const ETF_POOL_TICKERS = [
+  "459580", "488770", "273130", "069500", "290080",
+  "379800", "379810", "390390", "305720", "122630",
+  "229200", "463230", "132030", "453810", "453850",
 ];
 
 interface QuizAnswer {
@@ -46,9 +35,18 @@ export async function POST(req: NextRequest) {
 
     const openai = getOpenAI();
 
-    const etfList = ETF_POOL.map(
-      (e) => `- ${e.name} (${e.ticker}) | 1Y: ${e.return1Y}% | 3Y: ${e.return3Y}% | 보수: ${e.fee}% | MDD: ${e.mdd}% | ${e.category}`
-    ).join("\n");
+    // 네이버 실시간 시세로 ETF 풀 구성
+    const naverPrices = await getNaverETFPrices(ETF_POOL_TICKERS).catch(() => new Map());
+    const etfList = ETF_POOL_TICKERS.map((ticker) => {
+      const np = naverPrices.get(ticker);
+      const detail = getETFDetail(ticker);
+      if (np && detail) {
+        return `- ${np.name} (${ticker}) | 현재가: ${np.price.toLocaleString()}원 | 3M: ${np.threeMonthReturn}% | 시총: ${np.marketCap.toLocaleString()}억원 | 보수: ${detail.fee}% | MDD: ${detail.mdd}% | ${detail.category}`;
+      } else if (detail) {
+        return `- ${detail.name} (${ticker}) | 보수: ${detail.fee}% | MDD: ${detail.mdd}% | ${detail.category} (실시간 미조회)`;
+      }
+      return null;
+    }).filter(Boolean).join("\n");
 
     const prompt = `당신은 삼성자산운용의 전문 투자 성향 분석 AI입니다.
 사용자가 투자 성향 진단 퀴즈를 완료했습니다. 아래 응답을 분석하여 맞춤 투자 조언을 생성해주세요.
@@ -99,14 +97,25 @@ portfolio 규칙:
       analysis = null;
     }
 
-    // AI가 반환한 portfolio를 실제 ETF 데이터와 매칭
+    // AI가 반환한 portfolio를 네이버 실시간 + DB 메타데이터로 매칭
     if (analysis?.portfolio) {
-      const etfMap = new Map(ETF_POOL.map((e) => [e.ticker, e]));
       const enrichedPortfolio = analysis.portfolio
         .map((p: { ticker: string; weight: number }) => {
-          const etf = etfMap.get(p.ticker);
-          if (!etf) return null;
-          return { ...etf, weight: p.weight };
+          const detail = getETFDetail(p.ticker);
+          const np = naverPrices.get(p.ticker);
+          if (!detail) return null;
+          return {
+            name: np?.name || detail.name,
+            ticker: p.ticker,
+            weight: p.weight,
+            return1Y: detail.return1Y,
+            return3Y: detail.return3Y,
+            fee: detail.fee,
+            mdd: detail.mdd,
+            category: detail.category,
+            price: np?.price || 0,
+            marketCap: np?.marketCap || detail.aum,
+          };
         })
         .filter(Boolean);
 

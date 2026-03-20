@@ -117,6 +117,11 @@ export default function BriefingPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* 시뮬레이션 데이터 경고 */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 text-xs text-amber-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          본 브리핑은 시연용 샘플 데이터입니다. 실제 투자 판단에는 공식 시장 데이터를 참고하세요.
+        </div>
         {/* 날짜 + 시장 심리 */}
         <div className="flex flex-col sm:flex-row items-stretch gap-4">
           <div className="flex-1 bg-white rounded-xl border border-gray-200 p-5">

@@ -1044,7 +1044,7 @@ ${prefetchedData.join("\n")}`,
 
       // KIS 실시간 시세 DB 캐시
       for (let ti = 0; ti < uniqueTickers.length; ti++) {
-        const kp = kisResults[ti];
+        const [kp] = kisResults[ti] || [];
         if (kp) {
           upsertETFPrice({
             ticker: kp.ticker,

@@ -28,7 +28,10 @@ async function fetchAllETF(): Promise<Map<string, NaverETFPrice>> {
     clearTimeout(timer);
 
     if (!res.ok) throw new Error(`Naver API ${res.status}`);
-    const json = await res.json();
+    // EUC-KR 인코딩 → UTF-8 변환 (한글 깨짐 방지)
+    const buf = await res.arrayBuffer();
+    const decoded = new TextDecoder("euc-kr").decode(buf);
+    const json = JSON.parse(decoded);
     const items = json?.result?.etfItemList || [];
 
     const map = new Map<string, NaverETFPrice>();

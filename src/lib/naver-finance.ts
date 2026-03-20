@@ -28,17 +28,23 @@ async function fetchAllETF(): Promise<Map<string, NaverETFPrice>> {
     clearTimeout(timer);
 
     if (!res.ok) throw new Error(`Naver API ${res.status}`);
-    // EUC-KR 인코딩 → UTF-8 변환 (한글 깨짐 방지)
     const buf = await res.arrayBuffer();
-    const decoded = new TextDecoder("euc-kr").decode(buf);
+    let decoded: string;
+    try {
+      decoded = new TextDecoder("euc-kr").decode(buf);
+    } catch {
+      decoded = new TextDecoder("utf-8").decode(buf);
+    }
     const json = JSON.parse(decoded);
     const items = json?.result?.etfItemList || [];
 
     const map = new Map<string, NaverETFPrice>();
     for (const item of items) {
+      // 이름이 깨진 경우 ticker를 이름으로 사용 (chat API에서 DB 이름으로 덮어씌움)
+      const nameOk = item.itemname && !/[\udca0-\udcff]/.test(item.itemname);
       map.set(item.itemcode, {
         ticker: item.itemcode,
-        name: item.itemname,
+        name: nameOk ? item.itemname : item.itemcode,
         price: item.nowVal || 0,
         change: item.changeVal || 0,
         changeRate: item.changeRate || 0,

@@ -552,7 +552,7 @@ export default function ChatMessage({
           )}
 
           {/* 검증 AI 에이전트 */}
-          {content.length > 20 && (
+          {role === "assistant" && content.length > 30 && (
             <div className="mt-1">
               {!verifyResult && !verifying && (
                 <button

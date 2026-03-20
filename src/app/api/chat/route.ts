@@ -12,7 +12,7 @@ import {
   findKodexAlternative,
   type ETFProduct,
 } from "@/lib/etf-data";
-import { getKISPrice } from "@/lib/kis-api";
+import { getKISPrice, getKISDailyPrices } from "@/lib/kis-api";
 import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
 function getOpenAI() {
@@ -868,34 +868,61 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 2단계: 상세 + 수익률 + 실시간 시세 (티커가 있으면)
+  // 2단계: 상세 + 실시간 시세 + 실제 일봉 차트 (티커가 있으면)
   const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
 
-  // KIS 실시간 시세를 병렬로 가져오기 (실패해도 진행)
-  const kisPromises = uniqueTickers.map((t) => getKISPrice(t).catch(() => null));
+  // KIS 실시간 시세 + 일봉 데이터를 병렬로 가져오기
+  const kisPromises = uniqueTickers.map((t) =>
+    Promise.all([
+      getKISPrice(t).catch(() => null),
+      getKISDailyPrices(t).catch(() => []),
+    ])
+  );
   const kisResults = await Promise.all(kisPromises);
 
   for (let ti = 0; ti < uniqueTickers.length; ti++) {
     const ticker = uniqueTickers[ti];
-    const { result: detailResult, steps: detailSteps, chartData } = executeTool("get_etf_detail", { ticker });
-    allSteps.push(...detailSteps);
-    toolCallCount++;
-    if (chartData) allCharts.push(chartData);
+    const [kisPrice, kisDailyRaw] = kisResults[ti];
+    const detail = getETFDetail(ticker);
 
-    // 실시간 시세 합치기
-    const kisPrice = kisResults[ti];
-    if (kisPrice) {
-      allSteps.push(`📡 한국투자증권 API [실시간] ${kisPrice.name}: ${kisPrice.price.toLocaleString()}원 (${kisPrice.changeRate >= 0 ? "+" : ""}${kisPrice.changeRate}%)`);
-      prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)} [실시간시세] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}`);
+    if (detail) {
+      allSteps.push(`🔍 MCP Server [ETF상세] ${detail.name}(${ticker}) 조회 완료`);
+      toolCallCount++;
+
+      // KIS 일봉 → 차트 데이터 (실데이터 우선, 없으면 더미 폴백)
+      const kisDaily = kisDailyRaw || [];
+      const chartHistory = kisDaily.length >= 10
+        ? kisDaily.map((d) => ({ date: d.date, price: d.close }))
+        : (detail.priceHistory || []);
+
+      if (kisDaily.length >= 10) {
+        allSteps.push(`📡 한국투자증권 API [일봉] ${detail.name}: 실제 ${kisDaily.length}일치 데이터 로드`);
+      }
+
+      if (chartHistory.length > 0) {
+        allCharts.push({
+          type: "performance" as const,
+          data: { ticker, name: detail.name, priceHistory: chartHistory },
+        });
+      }
+
+      // 실시간 시세 합치기
+      const priceInfo = kisPrice
+        ? `[실시간시세] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}, 고가:${kisPrice.high}원, 저가:${kisPrice.low}원`
+        : "";
+
+      if (kisPrice) {
+        allSteps.push(`📡 한국투자증권 API [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원 (${kisPrice.changeRate >= 0 ? "+" : ""}${kisPrice.changeRate}%)`);
+      }
+
+      prefetchedData.push(
+        `[${detail.name}(${ticker})] 카테고리:${detail.category}, 보수:${detail.fee}%, AUM:${detail.aum}억원, ` +
+        `1M:${detail.return1M}%, 3M:${detail.return3M}%, 6M:${detail.return6M}%, 1Y:${detail.return1Y}%, MDD:${detail.mdd}% ` +
+        priceInfo
+      );
     } else {
-      prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)}`);
+      allSteps.push(`❌ ${ticker} 종목 조회 실패`);
     }
-
-    const { result: perfResult, steps: perfSteps, chartData: perfChart } = executeTool("get_etf_performance", { ticker });
-    allSteps.push(...perfSteps);
-    toolCallCount++;
-    if (perfChart) allCharts.push(perfChart);
-    prefetchedData.push(`[수익률 ${ticker}] ${JSON.stringify(perfResult)}`);
   }
 
   // 3단계: 비교 (2개 이상 티커)

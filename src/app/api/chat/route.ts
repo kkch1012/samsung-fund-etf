@@ -15,6 +15,8 @@ import {
 import { getKISPrice, getKISDailyPrices } from "@/lib/kis-api";
 import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
+export const maxDuration = 30;
+
 function getOpenAI() {
   return new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -871,14 +873,21 @@ export async function POST(request: NextRequest) {
   // 2단계: 상세 + 실시간 시세 + 실제 일봉 차트 (티커가 있으면)
   const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
 
-  // KIS 실시간 시세 + 일봉 데이터를 병렬로 가져오기
-  const kisPromises = uniqueTickers.map((t) =>
-    Promise.all([
-      getKISPrice(t).catch(() => null),
-      getKISDailyPrices(t).catch(() => []),
-    ])
+  // KIS 실시간 시세 + 일봉 (전체 4초 타임아웃, 실패 시 즉시 폴백)
+  const kisTimeout = <T>(p: Promise<T>, fallback: T): Promise<T> =>
+    Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), 4000))]);
+
+  const kisResults = await kisTimeout(
+    Promise.all(
+      uniqueTickers.map((t) =>
+        Promise.all([
+          getKISPrice(t).catch(() => null),
+          getKISDailyPrices(t).catch(() => [] as Awaited<ReturnType<typeof getKISDailyPrices>>),
+        ])
+      )
+    ),
+    uniqueTickers.map(() => [null, []] as [null, Awaited<ReturnType<typeof getKISDailyPrices>>])
   );
-  const kisResults = await Promise.all(kisPromises);
 
   for (let ti = 0; ti < uniqueTickers.length; ti++) {
     const ticker = uniqueTickers[ti];

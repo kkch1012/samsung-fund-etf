@@ -1,13 +1,24 @@
 const BASE_URL = "https://openapi.koreainvestment.com:9443";
+const KIS_TIMEOUT = 3000; // 3초 타임아웃
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
+
+function fetchWithTimeout(url: string, options: RequestInit, ms = KIS_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 async function getAccessToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
   }
 
-  const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
+  if (!process.env.KIS_APP_KEY || !process.env.KIS_APP_SECRET) {
+    throw new Error("KIS API keys not configured");
+  }
+
+  const res = await fetchWithTimeout(`${BASE_URL}/oauth2/tokenP`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -15,16 +26,17 @@ async function getAccessToken(): Promise<string> {
       appkey: process.env.KIS_APP_KEY,
       appsecret: process.env.KIS_APP_SECRET,
     }),
-  });
+  }, 5000);
 
   if (!res.ok) {
     throw new Error(`KIS token error: ${res.status}`);
   }
 
   const data = await res.json();
+  if (!data.access_token) throw new Error("No access_token in response");
   cachedToken = {
     token: data.access_token,
-    expiresAt: Date.now() + 23 * 60 * 60 * 1000, // 23시간 캐시
+    expiresAt: Date.now() + 23 * 60 * 60 * 1000,
   };
   return cachedToken.token;
 }
@@ -61,7 +73,7 @@ export async function getKISPrice(ticker: string): Promise<KISPrice | null> {
       fid_input_iscd: ticker,
     });
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price?${params}`,
       { headers: headers(token, "FHKST01010100") }
     );
@@ -120,7 +132,7 @@ export async function getKISDailyPrices(
       fid_org_adj_prc: "0",
     });
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?${params}`,
       { headers: headers(token, "FHKST03010100") }
     );

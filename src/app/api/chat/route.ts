@@ -12,6 +12,7 @@ import {
   findKodexAlternative,
   type ETFProduct,
 } from "@/lib/etf-data";
+import { getKISPrice } from "@/lib/kis-api";
 
 function getOpenAI() {
   return new OpenAI({
@@ -866,14 +867,28 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 2단계: 상세 + 수익률 (티커가 있으면)
+  // 2단계: 상세 + 수익률 + 실시간 시세 (티커가 있으면)
   const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
-  for (const ticker of uniqueTickers) {
+
+  // KIS 실시간 시세를 병렬로 가져오기 (실패해도 진행)
+  const kisPromises = uniqueTickers.map((t) => getKISPrice(t).catch(() => null));
+  const kisResults = await Promise.all(kisPromises);
+
+  for (let ti = 0; ti < uniqueTickers.length; ti++) {
+    const ticker = uniqueTickers[ti];
     const { result: detailResult, steps: detailSteps, chartData } = executeTool("get_etf_detail", { ticker });
     allSteps.push(...detailSteps);
     toolCallCount++;
     if (chartData) allCharts.push(chartData);
-    prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)}`);
+
+    // 실시간 시세 합치기
+    const kisPrice = kisResults[ti];
+    if (kisPrice) {
+      allSteps.push(`📡 한국투자증권 API [실시간] ${kisPrice.name}: ${kisPrice.price.toLocaleString()}원 (${kisPrice.changeRate >= 0 ? "+" : ""}${kisPrice.changeRate}%)`);
+      prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)} [실시간시세] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}`);
+    } else {
+      prefetchedData.push(`[상세 ${ticker}] ${JSON.stringify(detailResult)}`);
+    }
 
     const { result: perfResult, steps: perfSteps, chartData: perfChart } = executeTool("get_etf_performance", { ticker });
     allSteps.push(...perfSteps);

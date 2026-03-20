@@ -471,23 +471,29 @@ export default function Home() {
           <SuggestedQuestions onSelect={(q) => sendMessage(q)} />
         ) : (
           <div className="max-w-3xl mx-auto">
-            {messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                role={msg.role}
-                content={msg.content}
-                agent={msg.agent}
-                steps={msg.steps}
-                toolCallCount={msg.toolCallCount}
-                charts={msg.charts}
-                suggestedActions={msg.suggestedActions}
-                imageUrl={msg.imageUrl}
-                onAskQuestion={(q) => sendMessage(q)}
-                showProcessSteps={showProcessSteps}
-                isTyping={false}
-                onTypingComplete={() => {}}
-              />
-            ))}
+            {messages.map((msg, idx) => {
+              const prevUserMsg = msg.role === "assistant"
+                ? [...messages].slice(0, idx).reverse().find((m) => m.role === "user")
+                : undefined;
+              return (
+                <ChatMessage
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  agent={msg.agent}
+                  steps={msg.steps}
+                  toolCallCount={msg.toolCallCount}
+                  charts={msg.charts}
+                  suggestedActions={msg.suggestedActions}
+                  imageUrl={msg.imageUrl}
+                  onAskQuestion={(q) => sendMessage(q)}
+                  showProcessSteps={showProcessSteps}
+                  isTyping={false}
+                  onTypingComplete={() => {}}
+                  userQuestion={prevUserMsg?.content}
+                />
+              );
+            })}
 
             {/* 로딩 표시 */}
             {loading && (

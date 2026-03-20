@@ -928,9 +928,13 @@ export async function POST(request: NextRequest) {
   ];
 
   if (prefetchedData.length > 0) {
+    const hasLive = prefetchedData.some((d) => d.includes("[실시간시세]"));
     openaiMessages.push({
       role: "system",
-      content: `[MCP 도구 조회 결과 — 참조 전용, 원시 JSON/ticker/코드를 그대로 출력하지 마세요. 자연어로 정리하여 답변하세요.]\n${prefetchedData.join("\n")}`,
+      content: `[MCP 도구 + 한국투자증권 API 조회 결과]
+- 원시 JSON을 그대로 출력하지 마세요. 자연어 테이블로 정리하세요.
+${hasLive ? "- [실시간시세] 태그가 있는 데이터는 **한국투자증권 실시간 API에서 가져온 장중 현재가**입니다. 답변에 '실시간 현재가 기준'임을 명시하세요." : ""}
+${prefetchedData.join("\n")}`,
     });
   }
 

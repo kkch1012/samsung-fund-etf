@@ -18,6 +18,8 @@ import {
   MousePointerClick,
   BookOpen,
   Layers,
+  ShieldCheck,
+  Loader2,
 } from "lucide-react";
 
 const ETFChart = dynamic(() => import("./ETFChart"), { ssr: false });
@@ -257,6 +259,7 @@ interface ChatMessageProps {
   showProcessSteps?: boolean;
   isTyping?: boolean;
   onTypingComplete?: () => void;
+  userQuestion?: string;
 }
 
 export default function ChatMessage({
@@ -272,12 +275,15 @@ export default function ChatMessage({
   showProcessSteps = true,
   isTyping = false,
   onTypingComplete,
+  userQuestion,
 }: ChatMessageProps) {
   const [showSteps, setShowSteps] = useState(true);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [displayedContent, setDisplayedContent] = useState("");
   const [typingDone, setTypingDone] = useState(!isTyping);
   const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [verifyResult, setVerifyResult] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   // 타이핑 효과
   useEffect(() => {
@@ -542,6 +548,58 @@ export default function ChatMessage({
                   {q}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* 검증 AI 에이전트 */}
+          {content.length > 20 && (
+            <div className="mt-1">
+              {!verifyResult && !verifying && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setVerifying(true);
+                    try {
+                      const res = await fetch("/api/verify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          userQuestion: userQuestion || "",
+                          aiResponse: content,
+                        }),
+                      });
+                      const data = await res.json();
+                      setVerifyResult(data.verification || "검증 실패");
+                    } catch {
+                      setVerifyResult("검증 요청 중 오류가 발생했습니다.");
+                    } finally {
+                      setVerifying(false);
+                    }
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-emerald-600 transition-colors"
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  AI 응답 검증하기
+                </button>
+              )}
+              {verifying && (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-600">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  검증 AI가 팩트체크 중...
+                </div>
+              )}
+              {verifyResult && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mt-1">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-[11px] font-bold text-emerald-700">검증 AI 에이전트</span>
+                  </div>
+                  <div
+                    className="text-[12px] text-gray-700 leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: formatMarkdown(verifyResult) }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

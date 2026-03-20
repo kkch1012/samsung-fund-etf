@@ -174,3 +174,54 @@ export async function getKISDailyPrices(
     return [];
   }
 }
+
+/** 일봉 데이터에서 기간별 수익률을 코드로 계산 */
+export interface CalculatedReturns {
+  return1M: number | null;
+  return3M: number | null;
+  return6M: number | null;
+  return1Y: number | null;
+  source: "KIS_일봉_계산";
+}
+
+export function calculateReturnsFromDaily(daily: KISDailyPrice[]): CalculatedReturns {
+  if (daily.length < 2) {
+    return { return1M: null, return3M: null, return6M: null, return1Y: null, source: "KIS_일봉_계산" };
+  }
+
+  const latest = daily[daily.length - 1];
+  const latestDate = new Date(latest.date);
+
+  function findClosestPrice(monthsAgo: number): number | null {
+    const target = new Date(latestDate);
+    target.setMonth(target.getMonth() - monthsAgo);
+    const targetStr = target.toISOString().slice(0, 10);
+
+    let closest: KISDailyPrice | null = null;
+    let minDiff = Infinity;
+    for (const d of daily) {
+      const diff = Math.abs(new Date(d.date).getTime() - new Date(targetStr).getTime());
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = d;
+      }
+    }
+    // 30일 이상 차이나면 null
+    if (!closest || minDiff > 30 * 24 * 60 * 60 * 1000) return null;
+    return closest.close;
+  }
+
+  function calcReturn(monthsAgo: number): number | null {
+    const pastPrice = findClosestPrice(monthsAgo);
+    if (!pastPrice || pastPrice === 0) return null;
+    return Math.round(((latest.close - pastPrice) / pastPrice) * 10000) / 100;
+  }
+
+  return {
+    return1M: calcReturn(1),
+    return3M: calcReturn(3),
+    return6M: calcReturn(6),
+    return1Y: calcReturn(12),
+    source: "KIS_일봉_계산",
+  };
+}

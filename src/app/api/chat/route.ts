@@ -12,7 +12,7 @@ import {
   findKodexAlternative,
   type ETFProduct,
 } from "@/lib/etf-data";
-import { getKISPrice, getKISDailyPrices } from "@/lib/kis-api";
+import { getKISPrice, getKISDailyPrices, calculateReturnsFromDaily } from "@/lib/kis-api";
 import { getNaverETFPrices } from "@/lib/naver-finance";
 import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
@@ -952,10 +952,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 수익률은 일봉이 있으면 직접 계산
-      let returnNote = `1M:${detail.return1M}%, 3M:${detail.return3M}%, 6M:${detail.return6M}%, 1Y:${detail.return1Y}%`;
-      if (naverPrice?.threeMonthReturn) {
-        returnNote = `3M(실시간):${naverPrice.threeMonthReturn}%, 1Y(DB):${detail.return1Y}% ※1Y는 DB 기준, 실제와 차이 가능`;
+      // 수익률: KIS 일봉에서 코드로 계산 (LLM 생성 절대 금지)
+      const calcReturns = calculateReturnsFromDaily(dailyData);
+      let returnNote = "";
+      if (calcReturns.return1M !== null || calcReturns.return3M !== null) {
+        const parts = [];
+        if (calcReturns.return1M !== null) parts.push(`1M:${calcReturns.return1M}%`);
+        if (calcReturns.return3M !== null) parts.push(`3M:${calcReturns.return3M}%`);
+        if (calcReturns.return6M !== null) parts.push(`6M:${calcReturns.return6M}%`);
+        if (calcReturns.return1Y !== null) parts.push(`1Y:${calcReturns.return1Y}%`);
+        returnNote = `수익률(KIS일봉계산): ${parts.join(", ")}`;
+        allSteps.push(`📊 수익률 계산 [KIS일봉] ${detail.name}: ${parts.join(", ")}`);
+      } else if (naverPrice?.threeMonthReturn) {
+        returnNote = `수익률(네이버): 3M:${naverPrice.threeMonthReturn}%`;
+      } else {
+        returnNote = "수익률: 조회 불가";
       }
 
       prefetchedData.push(
@@ -963,7 +974,7 @@ export async function POST(request: NextRequest) {
         `\n  카테고리: ${detail.category}` +
         `\n  운용보수: ${detail.fee}%` +
         `\n  시가총액(AUM): ${realAUM.toLocaleString()}억원 (실시간)` +
-        `\n  수익률: ${returnNote}` +
+        `\n  ${returnNote}` +
         `\n  MDD: ${detail.mdd}%` +
         (liveBlock ? `\n  ${liveBlock}` : "")
       );

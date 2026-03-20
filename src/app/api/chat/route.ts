@@ -13,6 +13,7 @@ import {
   type ETFProduct,
 } from "@/lib/etf-data";
 import { getKISPrice, getKISDailyPrices } from "@/lib/kis-api";
+import { getNaverETFPrices } from "@/lib/naver-finance";
 import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
 export const maxDuration = 30;
@@ -870,42 +871,39 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 2단계: 상세 + 실시간 시세 + 실제 일봉 차트 (티커가 있으면)
+  // 2단계: 상세 + 실시간 시세(네이버+KIS) + 실제 일봉 차트
   const uniqueTickers = [...new Set(mentionedTickers)].slice(0, 3);
 
-  // KIS 실시간 시세 + 일봉 (전체 4초 타임아웃, 실패 시 즉시 폴백)
-  const kisTimeout = <T>(p: Promise<T>, fallback: T): Promise<T> =>
-    Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), 4000))]);
+  // 네이버 금융 (빠르고 안정, 토큰 불필요) + KIS 일봉 (차트용) 병렬 조회
+  const raceTimeout = <T>(p: Promise<T>, fallback: T, ms = 4000): Promise<T> =>
+    Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
 
-  const kisResults = await kisTimeout(
-    Promise.all(
-      uniqueTickers.map((t) =>
-        Promise.all([
-          getKISPrice(t).catch(() => null),
-          getKISDailyPrices(t).catch(() => [] as Awaited<ReturnType<typeof getKISDailyPrices>>),
-        ])
-      )
+  const [naverPrices, kisDaily] = await Promise.all([
+    raceTimeout(getNaverETFPrices(uniqueTickers), new Map(), 3000),
+    raceTimeout(
+      Promise.all(uniqueTickers.map((t) => getKISDailyPrices(t).catch(() => []))),
+      uniqueTickers.map(() => []),
+      4000
     ),
-    uniqueTickers.map(() => [null, []] as [null, Awaited<ReturnType<typeof getKISDailyPrices>>])
-  );
+  ]);
 
   for (let ti = 0; ti < uniqueTickers.length; ti++) {
     const ticker = uniqueTickers[ti];
-    const [kisPrice, kisDailyRaw] = kisResults[ti];
     const detail = getETFDetail(ticker);
+    const naverPrice = naverPrices.get(ticker);
+    const dailyData = (kisDaily[ti] || []) as Awaited<ReturnType<typeof getKISDailyPrices>>;
 
     if (detail) {
       allSteps.push(`🔍 MCP Server [ETF상세] ${detail.name}(${ticker}) 조회 완료`);
       toolCallCount++;
 
-      // KIS 일봉 → 차트 데이터 (실데이터 우선, 없으면 더미 폴백)
-      const kisDaily = kisDailyRaw || [];
-      const chartHistory = kisDaily.length >= 10
-        ? kisDaily.map((d) => ({ date: d.date, price: d.close }))
+      // 일봉 차트 (KIS 실데이터 우선, 없으면 더미 폴백)
+      const chartHistory = dailyData.length >= 10
+        ? dailyData.map((d) => ({ date: d.date, price: d.close }))
         : (detail.priceHistory || []);
 
-      if (kisDaily.length >= 10) {
-        allSteps.push(`📡 한국투자증권 API [일봉] ${detail.name}: 실제 ${kisDaily.length}일치 데이터 로드`);
+      if (dailyData.length >= 10) {
+        allSteps.push(`📡 한국투자증권 API [일봉] ${detail.name}: 실제 ${dailyData.length}일치`);
       }
 
       if (chartHistory.length > 0) {
@@ -915,13 +913,18 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // 실시간 시세 합치기
-      const priceInfo = kisPrice
-        ? `[실시간시세] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}, 고가:${kisPrice.high}원, 저가:${kisPrice.low}원`
-        : "";
-
-      if (kisPrice) {
-        allSteps.push(`📡 한국투자증권 API [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원 (${kisPrice.changeRate >= 0 ? "+" : ""}${kisPrice.changeRate}%)`);
+      // 실시간 시세 (네이버 우선, KIS 보조)
+      let priceInfo = "";
+      if (naverPrice && naverPrice.price > 0) {
+        allSteps.push(`📡 네이버금융 [실시간] ${naverPrice.name}: ${naverPrice.price.toLocaleString()}원 (${naverPrice.changeRate >= 0 ? "+" : ""}${naverPrice.changeRate}%)`);
+        priceInfo = `[실시간시세·네이버금융] 현재가:${naverPrice.price}원, 등락:${naverPrice.change}원(${naverPrice.changeRate}%), 거래량:${naverPrice.volume}주, 시총:${naverPrice.marketCap}억원`;
+      } else {
+        // KIS 폴백
+        const kisPrice = await getKISPrice(ticker).catch(() => null);
+        if (kisPrice && kisPrice.price > 0) {
+          allSteps.push(`📡 한국투자증권 API [실시간] ${detail.name}: ${kisPrice.price.toLocaleString()}원`);
+          priceInfo = `[실시간시세·KIS] 현재가:${kisPrice.price}원, 등락:${kisPrice.change}원(${kisPrice.changeRate}%), 거래량:${kisPrice.volume}주`;
+        }
       }
 
       prefetchedData.push(
@@ -1051,17 +1054,16 @@ ${prefetchedData.join("\n")}`,
         }),
       ]).catch((e) => console.error("DB save error:", e));
 
-      // KIS 실시간 시세 DB 캐시
-      for (let ti = 0; ti < uniqueTickers.length; ti++) {
-        const [kp] = kisResults[ti] || [];
-        if (kp) {
+      // 시세 DB 캐시 (네이버 우선)
+      for (const [, np] of naverPrices) {
+        if (np && np.price > 0) {
           upsertETFPrice({
-            ticker: kp.ticker,
-            name: kp.name,
-            price: kp.price,
-            changeVal: kp.change,
-            changeRate: kp.changeRate,
-            volume: kp.volume,
+            ticker: np.ticker,
+            name: np.name,
+            price: np.price,
+            changeVal: np.change,
+            changeRate: np.changeRate,
+            volume: np.volume,
           }).catch(() => {});
         }
       }

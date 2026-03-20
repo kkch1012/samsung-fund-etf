@@ -116,48 +116,59 @@ export interface KISDailyPrice {
   volume: number;
 }
 
-/** ETF/주식 일봉 데이터 (최근 100일) */
+/** ETF/주식 일봉 데이터 (최근 1년, 2회 호출로 ~200일) */
 export async function getKISDailyPrices(
   ticker: string
 ): Promise<KISDailyPrice[]> {
   try {
     const token = await getAccessToken();
-    const today = new Date();
-    const ago = new Date(today);
-    ago.setDate(ago.getDate() - 150);
-
     const fmt = (d: Date) =>
       `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 
-    const params = new URLSearchParams({
-      fid_cond_mrkt_div_code: "J",
-      fid_input_iscd: ticker,
-      fid_input_date_1: fmt(ago),
-      fid_input_date_2: fmt(today),
-      fid_period_div_code: "D",
-      fid_org_adj_prc: "0",
-    });
+    const today = new Date();
+    const mid = new Date(today);
+    mid.setDate(mid.getDate() - 130);
+    const yearAgo = new Date(today);
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1);
 
-    const res = await fetchWithTimeout(
-      `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?${params}`,
-      { headers: headers(token, "FHKST03010100") }
-    );
+    const fetchChunk = async (from: Date, to: Date): Promise<KISDailyPrice[]> => {
+      const params = new URLSearchParams({
+        fid_cond_mrkt_div_code: "J",
+        fid_input_iscd: ticker,
+        fid_input_date_1: fmt(from),
+        fid_input_date_2: fmt(to),
+        fid_period_div_code: "D",
+        fid_org_adj_prc: "0",
+      });
+      const res = await fetchWithTimeout(
+        `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?${params}`,
+        { headers: headers(token, "FHKST03010100") }
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.output2 || [])
+        .map((item: Record<string, string>) => ({
+          date: `${item.stck_bsop_date?.slice(0, 4)}-${item.stck_bsop_date?.slice(4, 6)}-${item.stck_bsop_date?.slice(6, 8)}`,
+          close: Number(item.stck_clpr) || 0,
+          open: Number(item.stck_oprc) || 0,
+          high: Number(item.stck_hgpr) || 0,
+          low: Number(item.stck_lwpr) || 0,
+          volume: Number(item.acml_vol) || 0,
+        }))
+        .filter((d: KISDailyPrice) => d.close > 0)
+        .reverse();
+    };
 
-    if (!res.ok) return [];
-    const data = await res.json();
-    const items = data.output2 || [];
+    // 2회 병렬 호출: 최근 130일 + 그 이전 ~130일
+    const [recent, older] = await Promise.all([
+      fetchChunk(mid, today),
+      fetchChunk(yearAgo, mid),
+    ]);
 
-    return items
-      .map((item: Record<string, string>) => ({
-        date: `${item.stck_bsop_date?.slice(0, 4)}-${item.stck_bsop_date?.slice(4, 6)}-${item.stck_bsop_date?.slice(6, 8)}`,
-        close: Number(item.stck_clpr) || 0,
-        open: Number(item.stck_oprc) || 0,
-        high: Number(item.stck_hgpr) || 0,
-        low: Number(item.stck_lwpr) || 0,
-        volume: Number(item.acml_vol) || 0,
-      }))
-      .filter((d: KISDailyPrice) => d.close > 0)
-      .reverse();
+    // 중복 제거 후 날짜순 정렬
+    const map = new Map<string, KISDailyPrice>();
+    for (const d of [...older, ...recent]) map.set(d.date, d);
+    return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
   } catch (e) {
     console.error(`KIS daily error for ${ticker}:`, e);
     return [];

@@ -934,9 +934,13 @@ export async function POST(request: NextRequest) {
       }
 
       prefetchedData.push(
-        `[${realName}(${ticker})] 카테고리:${detail.category}, 보수:${detail.fee}%, ` +
-        `시가총액(실시간):${realAUM}억원, ${returnNote}, MDD:${detail.mdd}% ` +
-        liveBlock
+        `[${realName}(${ticker})]` +
+        `\n  카테고리: ${detail.category}` +
+        `\n  운용보수: ${detail.fee}%` +
+        `\n  시가총액(AUM): ${realAUM.toLocaleString()}억원 (실시간)` +
+        `\n  수익률: ${returnNote}` +
+        `\n  MDD: ${detail.mdd}%` +
+        (liveBlock ? `\n  ${liveBlock}` : "")
       );
     } else {
       allSteps.push(`❌ ${ticker} 종목 조회 실패`);

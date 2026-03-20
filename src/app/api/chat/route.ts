@@ -13,6 +13,7 @@ import {
   type ETFProduct,
 } from "@/lib/etf-data";
 import { getKISPrice } from "@/lib/kis-api";
+import { saveChatMessage, upsertETFPrice } from "@/lib/supabase";
 
 function getOpenAI() {
   return new OpenAI({
@@ -990,6 +991,40 @@ export async function POST(request: NextRequest) {
       // 5) 완료
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
       controller.close();
+
+      // 6) DB 저장 (비동기, 스트리밍에 영향 없음)
+      const finalText = filtered !== fullText ? filtered : fullText;
+      Promise.all([
+        saveChatMessage({
+          sessionId: "default",
+          role: "user",
+          content: userMessage,
+        }),
+        saveChatMessage({
+          sessionId: "default",
+          role: "assistant",
+          content: finalText,
+          agentType: agentType,
+          agentName: agent.displayName,
+          toolCallCount,
+          model: requestedModel || "haiku",
+        }),
+      ]).catch((e) => console.error("DB save error:", e));
+
+      // KIS 실시간 시세 DB 캐시
+      for (let ti = 0; ti < uniqueTickers.length; ti++) {
+        const kp = kisResults[ti];
+        if (kp) {
+          upsertETFPrice({
+            ticker: kp.ticker,
+            name: kp.name,
+            price: kp.price,
+            changeVal: kp.change,
+            changeRate: kp.changeRate,
+            volume: kp.volume,
+          }).catch(() => {});
+        }
+      }
     },
   });
 

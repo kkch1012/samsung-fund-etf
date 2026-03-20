@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Calendar, Clock, AlertTriangle } from "lucide-react";
 
@@ -100,6 +101,32 @@ function TrendIcon({ trend }: { trend: "up" | "down" | "neutral" }) {
 }
 
 export default function BriefingPage() {
+  const [sectorData, setSectorData] = useState(SECTOR_ANALYSIS);
+
+  // 네이버 실시간으로 섹터별 ETF 수익률 교체
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("https://finance.naver.com/api/sise/etfItemList.nhn");
+        const json = await res.json();
+        const items = json?.result?.etfItemList || [];
+        const nameMap = new Map<string, { changeRate: number }>();
+        for (const item of items) {
+          nameMap.set(item.itemname, { changeRate: item.changeRate || 0 });
+        }
+        setSectorData((prev) =>
+          prev.map((s) => ({
+            ...s,
+            kodex: s.kodex.map((k) => {
+              const found = nameMap.get(k.name);
+              return found ? { ...k, return1M: found.changeRate } : k;
+            }),
+          }))
+        );
+      } catch { /* 실패 시 기존 데이터 유지 */ }
+    })();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
@@ -172,7 +199,7 @@ export default function BriefingPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-bold text-gray-800 mb-4">섹터별 시장 분석</h3>
           <div className="space-y-4">
-            {SECTOR_ANALYSIS.map((sector) => (
+            {sectorData.map((sector) => (
               <div key={sector.sector} className="border border-gray-100 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendIcon trend={sector.trend} />

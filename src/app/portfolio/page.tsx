@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Brain, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -158,6 +158,37 @@ export default function PortfolioPage() {
   const [aiLoading, setAiLoading] = useState(false);
 
   const portfolio = allPresets[selectedPreset];
+
+  // 네이버 실시간 시세로 프리셋 수익률 덮어씌우기
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("https://finance.naver.com/api/sise/etfItemList.nhn");
+        const json = await res.json();
+        const items = json?.result?.etfItemList || [];
+        const priceMap = new Map<string, { name: string; threeMonthReturn: number; marketCap: number }>();
+        for (const item of items) {
+          priceMap.set(item.itemcode, {
+            name: item.itemname,
+            threeMonthReturn: item.threeMonthEarnRate || 0,
+            marketCap: item.marketSum || 0,
+          });
+        }
+        setAllPresets((prev) =>
+          prev.map((preset) => ({
+            ...preset,
+            etfs: preset.etfs.map((etf) => {
+              const np = priceMap.get(etf.ticker);
+              if (np && np.threeMonthReturn) {
+                return { ...etf, return1Y: np.threeMonthReturn, name: np.name || etf.name };
+              }
+              return etf;
+            }),
+          }))
+        );
+      } catch { /* 실패 시 기존 정적 데이터 유지 */ }
+    })();
+  }, []);
 
   const runAiAnalysis = useCallback(async () => {
     if (aiLoading) return;

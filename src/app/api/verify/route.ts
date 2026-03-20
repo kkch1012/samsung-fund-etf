@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import OpenAI from "openai";
 import { searchETFProducts, getETFDetail } from "@/lib/etf-data";
 import { getKISPrice } from "@/lib/kis-api";
+import { getNaverETFPrice } from "@/lib/naver-finance";
 
 function getOpenAI() {
   return new OpenAI({
@@ -24,28 +25,30 @@ export async function POST(request: NextRequest) {
   const tickerMatches = aiResponse.match(/\b\d{6}\b/g) || [];
   const uniqueTickers = [...new Set(tickerMatches)].slice(0, 3);
 
-  // 실제 데이터 수집 (검증용)
+  // 실제 데이터 수집 (네이버 실시간 우선 + KIS 보조)
   const factData: string[] = [];
   for (const ticker of uniqueTickers) {
     const detail = getETFDetail(ticker);
-    const kis = await getKISPrice(ticker).catch(() => null);
+    const naver = await getNaverETFPrice(ticker).catch(() => null);
+    const kis = !naver ? await getKISPrice(ticker).catch(() => null) : null;
     if (detail) {
+      const price = naver ? `현재가=${naver.price.toLocaleString()}원(${naver.changeRate}%) [네이버실시간]` : (kis ? `현재가=${kis.price.toLocaleString()}원 [KIS]` : "현재가=조회불가");
+      const aum = naver ? `시총=${naver.marketCap.toLocaleString()}억원 [네이버실시간]` : `AUM=${detail.aum}억원 [DB]`;
       factData.push(
-        `${detail.name}(${ticker}): 1Y수익률=${detail.return1Y}%, 보수=${detail.fee}%, AUM=${detail.aum}억원, MDD=${detail.mdd}%` +
-          (kis ? `, 실시간현재가=${kis.price}원(${kis.changeRate}%)` : "")
+        `${detail.name}(${ticker}): ${price}, ${aum}, 보수=${detail.fee}% [DB]`
       );
     }
   }
 
-  // 키워드로도 검색
   const kwMatches = aiResponse.match(/KODEX\s+[^\s,()]+/gi) || [];
   for (const kw of kwMatches.slice(0, 3)) {
     const name = kw.replace(/^KODEX\s+/i, "");
     const results = searchETFProducts(name);
     if (results.length > 0 && !uniqueTickers.includes(results[0].ticker)) {
       const r = results[0];
+      const naver = await getNaverETFPrice(r.ticker).catch(() => null);
       factData.push(
-        `${r.name}(${r.ticker}): 1Y수익률=${r.return1Y}%, 보수=${r.fee}%, AUM=${r.aum}억원`
+        `${r.name}(${r.ticker}): ${naver ? `현재가=${naver.price.toLocaleString()}원 [실시간]` : "현재가=조회불가"}, 보수=${r.fee}% [DB]`
       );
     }
   }

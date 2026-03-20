@@ -1,0 +1,198 @@
+You are building a Korean ETF investment analysis service for Bottle Inc (주식회사 바틀).
+
+## CRITICAL: NEVER GENERATE FINANCIAL DATA
+
+This is the #1 rule. Every bug found in testing was caused by the LLM fabricating data.
+
+Real bugs found:
+- "KODEX 200커버드콜ATM" → does NOT exist (TIGER product was confused with KODEX)
+- "KODEX 200고배당커버드콜ATM" → actually RISE (KB Asset Management), not KODEX
+- Ticker 270800 mapped to "KODEX 배당성장" → 270800 is actually "KB RISE KQ High Dividend"
+- Ticker 390200 mapped to "KODEX 미국배당다우존스" → real ticker is 489250
+- Same ETF showing different fee rates across different tool calls
+- AUM values off by 3-10x from actual figures
+- Prices completely fabricated (e.g., 26,520원 when actual was 54,725원)
+
+## Architecture: Strict Separation of Data and Analysis
+
+```
+TOOL FUNCTION (code) → fetches data from API/DB → returns structured JSON
+LLM (AI) → receives JSON → explains/analyzes in natural language
+```
+
+The LLM NEVER produces: ticker codes, product names, prices, returns, AUM, fees, or any numerical financial data.
+
+## Tool Function Implementation Rules
+
+### Every tool function MUST:
+
+1. **Look up ETF master data from DB first**
+   - Ticker → name, asset_manager, brand, base_index, total_fee, listing_date
+   - If ticker not in DB → return error, never guess
+   - If name search returns no match → return empty, never fabricate
+
+2. **Fetch real-time data from external API**
+   - Price, change, volume → securities API (KRX, Naver Finance, broker API)
+   - AUM, NAV → fund info API
+   - Returns (1M, 3M, 1Y) → calculated from NAV history or data provider
+   - NEVER ask the LLM to fill in these values
+
+3. **Return structured JSON with metadata**
+```typescript
+interface ToolResult {
+  success: boolean;
+  data: ETFData[] | null;
+  data_timestamp: string;     // When data was fetched
+  data_source: string;        // Where data came from
+  errors?: string[];          // Any issues encountered
+}
+```
+
+4. **Handle API failures gracefully**
+```typescript
+// ✅ CORRECT: return null for missing data
+{ ticker: "091160", name: "KODEX 반도체", price: null, aum: null, 
+  data_status: "realtime_unavailable" }
+
+// ❌ WRONG: let AI estimate or fill in
+// Never prompt: "based on your knowledge, what would the price be?"
+```
+
+### Brand-Asset Manager Mapping (MUST validate)
+```
+KODEX    → 삼성자산운용 (Samsung Asset Management)
+TIGER    → 미래에셋자산운용 (Mirae Asset)
+RISE     → KB자산운용 (KB Asset Management)  
+ACE      → 한국투자신탁운용 (Korea Investment Management)
+SOL      → 신한자산운용 (Shinhan Asset Management)
+PLUS     → 한화자산운용 (Hanwha Asset Management)
+HANARO   → NH아문디자산운용
+KIWOOM   → 키움투자자산운용
+```
+
+If a product name starts with "KODEX" but the ticker belongs to KB Asset Management → ERROR. Do not proceed.
+
+## ETF Master DB Schema
+
+```typescript
+interface ETFMaster {
+  ticker: string;          // 6-digit code (e.g., "091160")
+  name: string;            // Official full name
+  asset_manager: string;   // Operating company
+  brand: string;           // KODEX, TIGER, RISE, etc.
+  category: string;        // e.g., "국내주식/반도체", "해외주식/미국배당"
+  base_index: string;      // Benchmark index
+  total_fee: number;       // Annual fee (%)
+  listing_date: string;    // YYYY-MM-DD
+  dividend_cycle: string;  // "월배당", "분기배당", "연배당"
+  is_leveraged: boolean;
+  is_inverse: boolean;
+  is_covered_call: boolean;
+  is_active: boolean;
+}
+```
+
+### Master Data Sources (priority order)
+1. KRX 정보데이터시스템 (data.krx.co.kr) - official
+2. 운용사 공식 사이트 (samsungfund.com, etc.)
+3. 금융투자협회 전자공시 (dis.kofia.or.kr)
+
+## Validation Layer
+
+Before ANY tool returns data to the user, run these checks:
+
+```typescript
+function validateOutput(data: ETFData): string[] {
+  const errors: string[] = [];
+  
+  // 1. Ticker exists in master DB
+  if (!masterDB.has(data.ticker)) 
+    errors.push(`Unknown ticker: ${data.ticker}`);
+  
+  // 2. Name matches master DB
+  const master = masterDB.get(data.ticker);
+  if (master && data.name !== master.name)
+    errors.push(`Name mismatch: got "${data.name}", expected "${master.name}"`);
+  
+  // 3. Brand-manager consistency
+  if (master && !master.name.startsWith(data.brand))
+    errors.push(`Brand mismatch`);
+  
+  // 4. Fee range (0% ~ 2%)
+  if (data.total_fee < 0 || data.total_fee > 2)
+    errors.push(`Fee out of range: ${data.total_fee}%`);
+  
+  // 5. Price sanity (positive, within 52-week range if available)
+  if (data.price !== null && data.price <= 0)
+    errors.push(`Invalid price: ${data.price}`);
+  
+  return errors;
+}
+```
+
+## LLM System Prompt for Analysis
+
+When the tool function passes data to the LLM for natural language explanation:
+
+```
+You are a Korean ETF analyst assistant.
+
+ABSOLUTE RULES:
+1. Only cite numbers from the [DATA] block provided. Never generate prices, returns, AUM, or fees.
+2. If [DATA] shows null for a field, say "데이터 조회 불가" — do not estimate.
+3. Never mention ETF products not present in [DATA].
+4. Always state the data timestamp (e.g., "3월 20일 장중 기준").
+5. Include investment risk disclaimer.
+
+YOUR ROLE: Explain, compare, and contextualize the provided data.
+NOT YOUR ROLE: Generate, estimate, or recall financial data.
+```
+
+## Real-time Data API Integration
+
+### Recommended approach: Naver Finance (unofficial but reliable)
+```typescript
+// Example: fetch ETF price from Naver Finance
+async function fetchNaverPrice(ticker: string): Promise<PriceData | null> {
+  const url = `https://finance.naver.com/item/main.naver?code=${ticker}`;
+  // Parse response for current price, change, volume
+  // Return null on failure — NEVER fabricate
+}
+```
+
+### Caching strategy
+- Market hours (09:00-15:30 KST): TTL = 60 seconds
+- After hours: TTL = 1 hour  
+- Static data (fees, names): TTL = 24 hours
+
+## File Structure
+
+```
+src/
+├── db/
+│   ├── etf_master.json          # Static ETF master data
+│   └── seed.ts                  # Script to populate master DB from KRX
+├── api/
+│   ├── market.ts                # Real-time price API client
+│   ├── fund.ts                  # Fund info (AUM, returns) API client
+│   └── types.ts                 # Shared type definitions
+├── tools/
+│   ├── search_etf.ts            # DB lookup → API enrich → return JSON
+│   ├── compare_etfs.ts          # Two ETFs: DB lookup → API → comparison JSON
+│   ├── recommend_etf.ts         # Category filter → API enrich → sorted JSON
+│   └── realtime_price.ts        # Ticker → API price → return JSON
+├── validation/
+│   └── validator.ts             # Pre-output validation checks
+└── prompts/
+    └── system.ts                # LLM system prompt (analysis only)
+```
+
+## Testing Requirements
+
+Every tool function must pass these test cases:
+- [ ] Non-existent ticker → returns error, not fabricated data
+- [ ] KODEX brand + non-Samsung ticker → caught by validator  
+- [ ] API timeout → returns null fields, not estimates
+- [ ] Same ETF queried twice → identical static data both times
+- [ ] Known ticker-name pairs match master DB exactly
+- [ ] Fee values match master DB (not LLM memory)

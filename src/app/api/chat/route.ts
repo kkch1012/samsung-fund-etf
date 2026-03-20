@@ -1003,14 +1003,19 @@ export async function POST(request: NextRequest) {
 
   if (prefetchedData.length > 0) {
     const hasLive = prefetchedData.some((d) => d.includes("[실시간"));
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
     openaiMessages.push({
       role: "system",
-      content: `[실시간 조회 데이터 — 이 데이터만 사용하세요]
-- 원시 텍스트를 그대로 출력하지 말고 자연어 테이블로 정리하세요.
-- "시가총액(실시간)" 값을 AUM/순자산으로 표기하세요.
-- "3M(실시간)" 값이 있으면 DB 수익률보다 우선 사용하세요.
-${hasLive ? "- [실시간·네이버금융] 데이터는 **장중 실시간**입니다. 답변에 '실시간 기준'임을 명시하세요." : "- 실시간 데이터를 가져오지 못했습니다. DB 기준 데이터임을 명시하세요."}
-- **데이터에 없는 수치를 만들지 마세요.**
+      content: `[DATA] — ${timeStr} 기준 조회 결과
+data_source: ${hasLive ? "네이버금융 실시간 + 한국투자증권 KIS API" : "삼성자산운용 DB"}
+data_timestamp: ${now.toISOString()}
+
+⛔ 아래 [DATA]에 있는 숫자만 답변에 사용하세요.
+⛔ [DATA]에 없는 ETF·가격·수익률·AUM을 절대 만들지 마세요.
+⛔ null 값은 "조회 불가"로 표시하세요.
+⛔ 원시 텍스트를 그대로 출력하지 말고 자연어 테이블로 정리하세요.
+
 ${prefetchedData.join("\n")}`,
     });
   }
